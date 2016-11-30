@@ -33,7 +33,8 @@ declarationkind_string.go: enum.go
 	stringer -type DeclarationKind
 
 edit:
-	@2>/dev/null gvim -p Makefile testdata/scanner/scanner.l testdata/parser/parser.y *.go
+	@2>/dev/null gvim -p Makefile all_test.go log context.go decl.go enum.go \
+		etc.go parser.go scanner.go type.go
 
 editor: declarationkind_string.go
 	gofmt -l -s -w *.go

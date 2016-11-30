@@ -262,6 +262,17 @@ func (c *Context) load(pos func() token.Position, importPath string, syntaxError
 	return p
 }
 
+// Load finds the package in importPath and returns the resulting Package or an error if any.
+func (c *Context) Load(importPath string) (*Package, error) {
+	err := newErrorList(10)
+	p := c.load(noPos, importPath, nil, err).wait() //TODO -noPos, must provide the real thing.
+	if err := err.error(); err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
+
 // SourceFile describes a source file.
 type SourceFile struct {
 	ImportSpecs   []*ImportSpec
