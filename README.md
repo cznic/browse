@@ -1,0 +1,2 @@
+# gsb
+Go Source Browser
