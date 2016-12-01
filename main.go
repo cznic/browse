@@ -8,6 +8,9 @@
 //
 //	browse [options] [import-path]
 //
+//	-a
+//		open all the package .go files.
+//
 //	-n
 //		print the list of files the package consists of and exit.
 //
@@ -38,6 +41,16 @@ import (
 )
 
 var (
+	oA = flag.Bool("a", false, `
+	open all the package .go files.`)
+	oN = flag.Bool("n", false, `
+	print the list of files the package consists of and exit.`)
+	oTags = flag.String("tags", "", strings.TrimSpace(`
+	a list of build tags to consider satisfied during the build. For more
+	information about build tags, see the description of build constraints
+	in the documentation for the go/build package.
+`))
+
 	windowStyle = wm.WindowStyle{
 		Border:     wm.Style{Background: tcell.ColorSilver, Foreground: tcell.ColorNavy},
 		ClientArea: wm.Style{Background: tcell.ColorSilver, Foreground: tcell.ColorNavy},
@@ -62,13 +75,6 @@ func env(key, default_ string) string {
 
 func main() {
 	log.SetFlags(log.Lshortfile)
-	oN := flag.Bool("n", false, `
-	print the list of files the package consists of and exit.`)
-	oTags := flag.String("tags", "", strings.TrimSpace(`
-	a list of build tags to consider satisfied during the build. For more
-	information about build tags, see the description of build constraints
-	in the documentation for the go/build package.
-`))
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr,
 			`%s [options] [import-path]
