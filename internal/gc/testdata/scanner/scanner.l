@@ -16,7 +16,7 @@ decimal_digit		[0-9]
 decimal_lit		[1-9]{decimal_digit}*
 decimals		{decimal_digit}+
 escaped_char		\\[abfnrtv'\x22\\]
-exponent		[eE][+-]?{decimals}*
+exponent		[eE][+-]?{decimals}
 float_lit		{decimals}"."{decimals}?{exponent}?|{decimals}{exponent}|"."{decimals}{exponent}?
 hex_byte_value		\\x{hex_digit}{hex_digit}
 hex_digit		[0-9a-fA-F]

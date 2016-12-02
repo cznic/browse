@@ -131,6 +131,7 @@ var (
 		}
 
 		defer lf.Close()
+
 		l, err := lex.NewL(lexFile, bufio.NewReader(lf), false, false)
 		if err != nil {
 			panic(err)
@@ -1252,16 +1253,12 @@ func (p *parser) todo() {
 	p.err(p.tokenPosition(), "%q=%q: TODO %v:%v", p.c, p.l.lit, fn, fl) //TODOOK
 }
 
-func testTags() []string {
-	return []string{"go1.1", "go1.2", "go1.3", "go1.4", "go1.5", "go1.6", "go1.7"} //TODO update when 1.8 is out
-}
-
 func newTestContext() (*Context, error) {
 	a := strings.Split(os.Getenv("GOPATH"), string(os.PathListSeparator)) //TODO Handle unset $GOPATH in go1.8. (?)
 	for i, v := range a {
 		a[i] = filepath.Join(v, "src")
 	}
-	return NewContext(runtime.GOOS, runtime.GOARCH, testTags(), append([]string{filepath.Join(runtime.GOROOT(), "src")}, a...))
+	return NewContext(runtime.GOOS, runtime.GOARCH, VersionTags(), append([]string{filepath.Join(runtime.GOROOT(), "src")}, a...))
 }
 
 func testParser(t *testing.T, packages []*Package) {

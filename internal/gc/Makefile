@@ -34,7 +34,7 @@ declarationkind_string.go: enum.go
 
 edit:
 	@2>/dev/null gvim -p Makefile all_test.go log context.go decl.go enum.go \
-		etc.go parser.go scanner.go type.go
+		etc.go parser.go scanner.go scanner18.go type.go
 
 editor: declarationkind_string.go
 	gofmt -l -s -w *.go

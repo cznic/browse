@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !go1.8
+// +build go1.8
 
 package gc
 
@@ -173,28 +173,32 @@ func (l *lexer) octals(max int) (n int) {
 	return n
 }
 
-func (l *lexer) decimals() {
+func (l *lexer) decimals() (r bool) {
 	for l.c >= '0' && l.c <= '9' {
+		r = true
 		l.n()
 	}
+	return r
 }
 
-func (l *lexer) exponent() token.Token {
+func (l *lexer) exponent(off, line, column int32) (int32, int32, int32, token.Token) {
 	switch l.c {
 	case 'e', 'E':
 		switch l.n() {
 		case '+', '-':
 			l.n()
 		}
-		l.decimals()
+		if !l.decimals() {
+			l.err(newTokenPosition(l.path, off, line, column), "illegal floating-point exponent")
+		}
 	}
 	switch l.c {
 	case 'i':
 		l.n()
-		return token.IMAG
+		return off, line, column, token.IMAG
 	}
 
-	return token.FLOAT
+	return off, line, column, token.FLOAT
 }
 
 func (l *lexer) hexadecimals(max int) (n int) {
@@ -522,7 +526,7 @@ skip:
 		switch l.n() {
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			l.decimals()
-			return off, line, column, l.exponent()
+			return l.exponent(off, line, column)
 		case '.':
 			switch l.n() {
 			case '.':
@@ -593,16 +597,16 @@ skip:
 		case '.':
 			l.n()
 			l.decimals()
-			return off, line, column, l.exponent()
+			return l.exponent(off, line, column)
 		case '8', '9':
 			l.decimals()
 			switch l.c {
 			case '.':
 				l.n()
 				l.decimals()
-				return off, line, column, l.exponent()
+				return l.exponent(off, line, column)
 			case 'e', 'E':
-				return off, line, column, l.exponent()
+				return l.exponent(off, line, column)
 			case 'i':
 				l.n()
 				return off, line, column, token.IMAG
@@ -610,7 +614,7 @@ skip:
 				l.err(newTokenPosition(l.path, off, line, column), "illegal octal number")
 			}
 		case 'e', 'E':
-			return off, line, column, l.exponent()
+			return l.exponent(off, line, column)
 		case 'i':
 			l.n()
 			return off, line, column, token.IMAG
@@ -632,9 +636,9 @@ skip:
 		case '.':
 			l.n()
 			l.decimals()
-			return off, line, column, l.exponent()
+			return l.exponent(off, line, column)
 		case 'e', 'E':
-			return off, line, column, l.exponent()
+			return l.exponent(off, line, column)
 		case 'i':
 			l.n()
 			return off, line, column, token.IMAG
