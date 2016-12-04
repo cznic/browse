@@ -582,6 +582,7 @@ func testScannerBugs(t *testing.T) {
 		{"\"\\x00\"", toks{{0, "1:1", token.STRING, "\"\\x00\""}, {6, "1:7", token.SEMICOLON, "\n"}}},
 		{"\xf0", toks{{0, "1:1", token.IDENT, "\xf0"}, {1, "1:2", token.SEMICOLON, "\n"}}},
 		{"\xf0;", toks{{0, "1:1", token.IDENT, "\xf0"}, {1, "1:2", token.SEMICOLON, ";"}}},
+		{"a @= b", toks{{0, "1:1", token.IDENT, "a"}, {2, "1:3", token.ILLEGAL, "@"}, {3, "1:4", token.ASSIGN, "="}, {5, "1:6", token.IDENT, "b"}, {6, "1:7", token.SEMICOLON, "\n"}}},
 		{"a/**/", toks{{0, "1:1", token.IDENT, "a"}, {1, "1:2", token.SEMICOLON, "\n"}}},
 		{"a/**//**/", toks{{0, "1:1", token.IDENT, "a"}, {1, "1:2", token.SEMICOLON, "\n"}}},
 		{"a/*\n*/", toks{{0, "1:1", token.IDENT, "a"}, {1, "1:2", token.SEMICOLON, "\n"}}},
@@ -679,7 +680,7 @@ outer:
 		l.commentHandler = func(pos token.Position, lit []byte) {
 			if bytes.HasPrefix(lit, lineDirective) {
 				lit = bytes.TrimSpace(lit[len(lineDirective):])
-				if i := bytes.IndexByte(lit, ':'); i > 0 && i < len(lit)-1 {
+				if i := bytes.IndexByte(lit, ':'); i > 0 && i < len(lit)-1 { //TODO last index.
 					fn := lit[:i]
 					ln := 0
 					for _, c := range lit[i+1:] {

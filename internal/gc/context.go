@@ -111,32 +111,57 @@ func NewContext(goos, goarch string, tags, searchPaths []string) (*Context, erro
 
 /*
 
-(1) If there is a source directory d/vendor, then, when compiling a source file
-within the subtree rooted at d, import "p" is interpreted as import
-"d/vendor/p" if that path names a directory containing at least one file with a
-name ending in “.go”.
+Vendor Directories
 
-(2) When there are multiple possible resolutions, the most specific (longest)
-path wins.
+Go 1.6 includes support for using local copies of external dependencies
+to satisfy imports of those dependencies, often referred to as vendoring.
 
-(3) The short form must always be used: no import path can contain “/vendor/”
-explicitly.
+Code below a directory named "vendor" is importable only
+by code in the directory tree rooted at the parent of "vendor",
+and only using an import path that omits the prefix up to and
+including the vendor element.
 
-(4) Import comments are ignored in vendored packages.
+Here's the example from the previous section,
+but with the "internal" directory renamed to "vendor"
+and a new foo/vendor/crash/bang directory added:
 
-Update, January 2016: These rules do not apply to the “C” pseudo-package, which
-is processed earlier than normal import processing. They do, however, apply to
-standard library packages. If someone wants to vendor (and therefore hide the
-standard library version of) “math” or even “unsafe”, they can.
+    /home/user/gocode/
+        src/
+            crash/
+                bang/              (go code in package bang)
+                    b.go
+            foo/                   (go code in package foo)
+                f.go
+                bar/               (go code in package bar)
+                    x.go
+                vendor/
+                    crash/
+                        bang/      (go code in package bang)
+                            b.go
+                    baz/           (go code in package baz)
+                        z.go
+                quux/              (go code in package main)
+                    y.go
 
-Update, January 2016: The original text of the first condition (1) above read
-“as import "d/vendor/p" if that exists”. It has been adjusted to require that
-the path name a directory containing at least one file with a name ending in
-.go, so that it is possible to vendor a/b/c without having the parent directory
-vendor/a/b hide the real a/b.
+The same visibility rules apply as for internal, but the code
+in z.go is imported as "baz", not as "foo/vendor/baz".
 
-----------------------------
-src: golang.org/s/go15vendor
+Code in vendor directories deeper in the source tree shadows
+code in higher directories. Within the subtree rooted at foo, an import
+of "crash/bang" resolves to "foo/vendor/crash/bang", not the
+top-level "crash/bang".
+
+Code in vendor directories is not subject to import path
+checking (see 'go help importpath').
+
+When 'go get' checks out or updates a git repository, it now also
+updates submodules.
+
+Vendor directories do not affect the placement of new repositories
+being checked out for the first time by 'go get': those are always
+placed in the main GOPATH, never in a vendor subtree.
+
+See https://golang.org/s/go15vendor for details.
 
 */
 func (c *Context) dirForImportPath(importPath string) (string, error) {
