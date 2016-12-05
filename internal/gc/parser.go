@@ -47,6 +47,8 @@ func (p Position) position() token.Position {
 	return token.Position{Filename: p.Filename(), Line: int(p.Line), Column: int(p.Column)}
 }
 
+func (p Position) String() string { return p.position().String() }
+
 // Token represents the position and value of a lexeme.
 type Token struct {
 	Position
@@ -279,6 +281,21 @@ func (p *parser) importSpec() {
 			spec := newImportSpec(p.tok(), p.off, dot, qualifier, ip)
 			spec.Package = p.sourceFile.Package.ctx.load(p.pos(), ip, nil, p.sourceFile.Package.errorList)
 			p.sourceFile.ImportSpecs = append(p.sourceFile.ImportSpecs, spec)
+			switch {
+			case dot:
+				//TODO p.todo()
+			default:
+				if qualifier == "" {
+					qualifier = spec.Package.Name
+				}
+
+				if ex, ok := spec.Package.fsNames[qualifier]; ok {
+					_ = ex
+					panic(p.pos())
+					//TODO p.todo() // declared in pkg and file scope at the same time.
+				}
+				p.sourceFile.Scope.declare(p, spec)
+			}
 		}
 		p.n()
 	default:

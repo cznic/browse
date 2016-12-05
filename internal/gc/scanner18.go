@@ -8,6 +8,7 @@ package gc
 
 import (
 	"bytes"
+	"go/token"
 	"unicode/utf8"
 )
 
@@ -59,17 +60,13 @@ var (
 	}
 )
 
-func newTokenPosition(fn string, off, line, column int32) token.Position {
-	return token.Position{Filename: fn, Offset: int(off), Line: int(line), Column: int(column)}
-}
-
 type lexer struct {
-	commentHandler func(pos token.Position, lit []byte)
-	errHandler     func(pos token.Position, msg string, args ...interface{})
+	commentHandler func(pos Position, lit []byte)
+	errHandler     func(pos Position, msg string, args ...interface{})
 	errorCount     int // Number of errors encountered.
 	lit            []byte
-	path           string
 	prev           token.Token
+	sourceFile     *SourceFile
 	src            []byte
 
 	column        int32
@@ -107,7 +104,7 @@ func (l *lexer) init(src []byte) *lexer {
 	l.line = 1
 	l.column = 0
 	l.c = classNext
-	l.path = ""
+	l.sourceFile = nil
 	if bytes.HasPrefix(src, bom) {
 		l.off = 3
 		l.column = 2
@@ -116,7 +113,7 @@ func (l *lexer) init(src []byte) *lexer {
 	return l
 }
 
-func (l *lexer) err(pos token.Position, msg string, args ...interface{}) {
+func (l *lexer) err(pos Position, msg string, args ...interface{}) {
 	l.errorCount++
 	if l.errHandler != nil {
 		l.errHandler(pos, msg, args...)
@@ -153,12 +150,12 @@ func (l *lexer) n() byte { // n == next
 			}
 		case 0xef: // BOM[0]
 			if l.off+1 < int32(len(l.src)) && l.src[l.off] == 0xbb && l.src[l.off+1] == 0xbf {
-				l.err(newTokenPosition(l.path, l.off-1, l.line, l.column), "illegal BOM")
+				l.err(newPosition(l.sourceFile, l.line, l.column), "illegal BOM")
 				l.c = classBOM
 			}
 		}
 	} else if l.b == 0 {
-		l.err(newTokenPosition(l.path, l.off-1, l.line, l.column), "illegal character NUL")
+		l.err(newPosition(l.sourceFile, l.line, l.column), "illegal character NUL")
 	}
 	return l.c
 }
@@ -188,7 +185,7 @@ func (l *lexer) exponent(off, line, column int32) (int32, int32, int32, token.To
 			l.n()
 		}
 		if !l.decimals() {
-			l.err(newTokenPosition(l.path, off, line, column), "illegal floating-point exponent")
+			l.err(newPosition(l.sourceFile, line, column), "illegal floating-point exponent")
 		}
 	}
 	switch l.c {
@@ -241,18 +238,18 @@ func (l *lexer) skip() rune {
 func (l *lexer) stringEscFail() bool {
 	switch l.c {
 	case '\n':
-		l.err(newTokenPosition(l.path, l.off-1, l.line, l.column), "illegal character %#U in escape sequence", l.c)
+		l.err(newPosition(l.sourceFile, l.line, l.column), "illegal character %#U in escape sequence", l.c)
 	case '"':
-		l.err(newTokenPosition(l.path, l.off-1, l.line, l.column), "illegal character %#U in escape sequence", l.c)
+		l.err(newPosition(l.sourceFile, l.line, l.column), "illegal character %#U in escape sequence", l.c)
 		l.n()
 		return true
 	case '\\':
-		l.err(newTokenPosition(l.path, l.off-1, l.line, l.column), "illegal character %#U in escape sequence", l.c)
+		l.err(newPosition(l.sourceFile, l.line, l.column), "illegal character %#U in escape sequence", l.c)
 		fallthrough
 	case classEOF:
-		l.err(newTokenPosition(l.path, l.off, l.line, l.column), "escape sequence not terminated")
+		l.err(newPosition(l.sourceFile, l.line, l.column), "escape sequence not terminated")
 	default:
-		l.err(newTokenPosition(l.path, l.off-1, l.line, l.column), "illegal character %#U in escape sequence", l.skip())
+		l.err(newPosition(l.sourceFile, l.line, l.column), "illegal character %#U in escape sequence", l.skip())
 	}
 	return false
 }
@@ -260,15 +257,15 @@ func (l *lexer) stringEscFail() bool {
 func (l *lexer) charEscFail() {
 	switch l.c {
 	case '\n':
-		l.err(newTokenPosition(l.path, l.off-1, l.line, l.column), "illegal character %#U in escape sequence", l.c)
+		l.err(newPosition(l.sourceFile, l.line, l.column), "illegal character %#U in escape sequence", l.c)
 	case '\\':
-		l.err(newTokenPosition(l.path, l.off-1, l.line, l.column), "illegal character %#U in escape sequence", l.c)
+		l.err(newPosition(l.sourceFile, l.line, l.column), "illegal character %#U in escape sequence", l.c)
 		l.n()
 		fallthrough
 	case classEOF:
-		l.err(newTokenPosition(l.path, l.off, l.line, l.column), "escape sequence not terminated")
+		l.err(newPosition(l.sourceFile, l.line, l.column), "escape sequence not terminated")
 	default:
-		l.err(newTokenPosition(l.path, l.off-1, l.line, l.column), "illegal character %#U in escape sequence", l.skip())
+		l.err(newPosition(l.sourceFile, l.line, l.column), "illegal character %#U in escape sequence", l.skip())
 	}
 }
 
@@ -281,7 +278,7 @@ skip:
 			if l.c != classEOF {
 				end--
 			}
-			l.commentHandler(newTokenPosition(l.path, off, line, column), l.src[off:end])
+			l.commentHandler(newPosition(l.sourceFile, line, column), l.src[off:end])
 		}
 		if l.commentOfs < 0 {
 			l.commentOfs = off
@@ -355,13 +352,13 @@ skip:
 	more:
 		switch l.c {
 		case '\n', classEOF:
-			l.err(newTokenPosition(l.path, off, line, column), "string literal not terminated")
+			l.err(newPosition(l.sourceFile, line, column), "string literal not terminated")
 		case '"':
 			l.n()
 		case '\\':
 			switch l.n() {
 			case '\n':
-				l.err(newTokenPosition(l.path, l.off-1, line, column), "unknown escape sequence")
+				l.err(newPosition(l.sourceFile, line, column), "unknown escape sequence")
 			case '0', '1', '2', '3', '4', '5', '6', '7':
 				if l.octals(3) < 3 && l.stringEscFail() {
 					return off, line, column, token.STRING
@@ -381,12 +378,12 @@ skip:
 			case 'x':
 				l.n()
 				if l.hexadecimals(2) < 2 && l.c == classEOF {
-					l.err(newTokenPosition(l.path, l.off, line, column), "escape sequence not terminated")
+					l.err(newPosition(l.sourceFile, line, column), "escape sequence not terminated")
 				}
 			case classEOF:
-				l.err(newTokenPosition(l.path, l.off, line, column), "escape sequence not terminated")
+				l.err(newPosition(l.sourceFile, line, column), "escape sequence not terminated")
 			default:
-				l.err(newTokenPosition(l.path, l.off-1, line, column), "unknown escape sequence")
+				l.err(newPosition(l.sourceFile, line, column), "unknown escape sequence")
 				l.skip()
 			}
 			goto more
@@ -423,15 +420,15 @@ skip:
 	case '\'':
 		switch l.n() {
 		case '\n', classEOF:
-			l.err(newTokenPosition(l.path, off, line, column), "rune literal not terminated")
+			l.err(newPosition(l.sourceFile, line, column), "rune literal not terminated")
 		case '\'':
-			l.err(newTokenPosition(l.path, off, line, column), "illegal rune literal")
+			l.err(newPosition(l.sourceFile, line, column), "illegal rune literal")
 			l.n()
 			return off, line, column, token.CHAR
 		case '\\':
 			switch l.n() {
 			case '\n':
-				l.err(newTokenPosition(l.path, l.off-1, line, column), "unknown escape sequence")
+				l.err(newPosition(l.sourceFile, line, column), "unknown escape sequence")
 				return off, line, column, token.CHAR
 			case '0', '1', '2', '3', '4', '5', '6', '7':
 				if l.octals(3) < 3 {
@@ -459,10 +456,10 @@ skip:
 					return off, line, column, token.CHAR
 				}
 			case classEOF:
-				l.err(newTokenPosition(l.path, l.off, line, column), "escape sequence not terminated")
+				l.err(newPosition(l.sourceFile, line, column), "escape sequence not terminated")
 				return off, line, column, token.CHAR
 			default:
-				l.err(newTokenPosition(l.path, l.off-1, line, column), "unknown escape sequence")
+				l.err(newPosition(l.sourceFile, line, column), "unknown escape sequence")
 				l.skip()
 				return off, line, column, token.CHAR
 			}
@@ -471,14 +468,14 @@ skip:
 		}
 		switch l.c {
 		case '\n', classEOF:
-			l.err(newTokenPosition(l.path, off, line, column), "rune literal not terminated")
+			l.err(newPosition(l.sourceFile, line, column), "rune literal not terminated")
 		case '\\':
-			l.err(newTokenPosition(l.path, l.off, line, column), "escape sequence not terminated")
+			l.err(newPosition(l.sourceFile, line, column), "escape sequence not terminated")
 			l.n()
 		case '\'':
 			l.n()
 		default:
-			l.err(newTokenPosition(l.path, off, line, column), "rune literal not terminated")
+			l.err(newPosition(l.sourceFile, line, column), "rune literal not terminated")
 			for l.n() != '\'' && l.c != classEOF && l.c != '\n' {
 			}
 		}
@@ -573,7 +570,7 @@ skip:
 								if l.c != classEOF {
 									end--
 								}
-								l.commentHandler(newTokenPosition(l.path, off, line, column), l.src[off:end])
+								l.commentHandler(newPosition(l.sourceFile, line, column), l.src[off:end])
 							}
 							return off, line, column, tokenNL
 						}
@@ -582,7 +579,7 @@ skip:
 					}
 				}
 			}
-			l.err(newTokenPosition(l.path, off, line, column), "comment not terminated")
+			l.err(newPosition(l.sourceFile, line, column), "comment not terminated")
 			return off, line, column, token.COMMENT
 		case '=':
 			l.n()
@@ -610,7 +607,7 @@ skip:
 				l.n()
 				return off, line, column, token.IMAG
 			default:
-				l.err(newTokenPosition(l.path, off, line, column), "illegal octal number")
+				l.err(newPosition(l.sourceFile, line, column), "illegal octal number")
 			}
 		case 'e', 'E':
 			return l.exponent(off, line, column)
@@ -624,7 +621,7 @@ skip:
 
 			l.n()
 			if l.hexadecimals(-1) == 0 {
-				l.err(newTokenPosition(l.path, off, line, column), "illegal hexadecimal number")
+				l.err(newPosition(l.sourceFile, line, column), "illegal hexadecimal number")
 			}
 		}
 
@@ -718,7 +715,7 @@ skip:
 				l.column = 0
 			}
 		case classEOF:
-			l.err(newTokenPosition(l.path, off, line, column), "raw string literal not terminated")
+			l.err(newPosition(l.sourceFile, line, column), "raw string literal not terminated")
 			return off, line, column, token.STRING
 		}
 		goto more3
@@ -914,9 +911,9 @@ skip:
 
 		switch {
 		case l.b < ' ':
-			l.err(newTokenPosition(l.path, off, line, column), "illegal character %U", l.skip())
+			l.err(newPosition(l.sourceFile, line, column), "illegal character %U", l.skip())
 		default:
-			l.err(newTokenPosition(l.path, off, line, column), "illegal character %#U", l.skip())
+			l.err(newPosition(l.sourceFile, line, column), "illegal character %#U", l.skip())
 		}
 		return off, line, column, token.ILLEGAL
 	}

@@ -356,6 +356,7 @@ type Package struct {
 	SourceFiles  []*SourceFile
 	ctx          *Context
 	errorList    *errorList
+	fsNames      map[string]Position
 	importedByMu sync.Mutex
 	ready        chan struct{}
 }
@@ -373,6 +374,7 @@ func newPackage(ctx *Context, importPath, nm string, errorList *errorList) *Pack
 		Scope:      s,
 		ctx:        ctx,
 		errorList:  errorList,
+		fsNames:    map[string]Position{},
 		ready:      make(chan struct{}),
 	}
 }

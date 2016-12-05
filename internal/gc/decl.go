@@ -1,4 +1,4 @@
-// Copyright 2016 The GC Authors. All rights reserved.
+// Copyright 2016 The GC Authors. All rights reservedGG.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -24,7 +24,7 @@ func (b *Bindings) declare(p *parser, d Declaration) {
 	}
 	m := *b
 	nm := d.Name()
-	if nm == "" {
+	if nm == "" { //TODO-
 		panic("internal error")
 	}
 
@@ -98,6 +98,20 @@ func (s *Scope) declare(p *parser, d Declaration) {
 	}
 
 	switch d.(type) {
+	case *ImportSpec:
+		if s.Kind != FileScope { //TODO-
+			panic("internal error")
+		}
+
+		pkg := p.sourceFile.Package
+		switch ex, ok := pkg.fsNames[nm]; {
+		case ok:
+			_ = ex
+			panic(p.pos())
+			//TODO p.todo()
+		default:
+			s.Bindings.declare(p, d)
+		}
 	default:
 		panic("internal error")
 	}

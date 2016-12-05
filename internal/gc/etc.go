@@ -19,6 +19,9 @@ type errorList struct {
 }
 
 func newErrorList(limit int) *errorList {
+	if limit == 0 {
+		limit = 1
+	}
 	return &errorList{limit: limit}
 }
 
