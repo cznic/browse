@@ -84,6 +84,10 @@ func (b *browser) onKey(w *wm.Window, prev wm.OnKeyHandler, key tcell.Key, mod t
 }
 
 func (b *browser) setup() {
+	app.BeginUpdate()
+
+	defer app.EndUpdate()
+
 	app.SetDoubleClickDuration(0)
 	app.SetDesktop(app.NewDesktop())
 	app.OnKey(b.onKey, nil)

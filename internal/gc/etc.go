@@ -7,7 +7,6 @@ package gc
 import (
 	"bytes"
 	"go/scanner"
-	"go/token"
 	"os"
 	"path/filepath"
 	"sync"
@@ -23,7 +22,7 @@ func newErrorList(limit int) *errorList {
 	return &errorList{limit: limit}
 }
 
-func (l *errorList) Add(pos token.Position, msg string) {
+func (l *errorList) Add(pos Position, msg string) {
 	l.mu.Lock()
 	if l.limit <= 0 {
 		l.mu.Unlock()
@@ -31,7 +30,7 @@ func (l *errorList) Add(pos token.Position, msg string) {
 	}
 
 	l.limit--
-	l.list.Add(pos, msg)
+	l.list.Add(pos.position(), msg)
 	l.mu.Unlock()
 }
 
@@ -62,8 +61,6 @@ func (l *errorList) Error() string {
 	l.mu.Unlock()
 	return s
 }
-
-func noPos() (r token.Position) { return r }
 
 func checkDir(dir string) (bool, error) {
 	fi, err := os.Stat(dir)

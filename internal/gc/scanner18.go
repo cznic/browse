@@ -8,7 +8,6 @@ package gc
 
 import (
 	"bytes"
-	"go/token"
 	"unicode/utf8"
 )
 

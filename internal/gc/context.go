@@ -6,7 +6,6 @@ package gc
 
 import (
 	"fmt"
-	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -252,7 +251,7 @@ func (c *Context) filesForImportPath(importPath string) (dir string, sourceFiles
 	return dir, sourceFiles, testFiles, nil
 }
 
-func (c *Context) load(pos func() token.Position, importPath string, syntaxError func(*parser), errList *errorList) *Package {
+func (c *Context) load(pos Position, importPath string, syntaxError func(*parser), errList *errorList) *Package {
 	c.packagesMu.Lock()
 
 	p := c.packages[importPath]
@@ -268,13 +267,12 @@ func (c *Context) load(pos func() token.Position, importPath string, syntaxError
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				errList.Add(token.Position{}, fmt.Sprint(err))
+				errList.Add(Position{}, fmt.Sprint(err))
 			}
 		}()
 
 		dir, files, _, err := c.filesForImportPath(importPath)
 		if err != nil {
-			pos := pos()
 			close(p.ready)
 			errList.Add(pos, err.Error())
 			return
@@ -290,7 +288,7 @@ func (c *Context) load(pos func() token.Position, importPath string, syntaxError
 // Load finds the package in importPath and returns the resulting Package or an error if any.
 func (c *Context) Load(importPath string) (*Package, error) {
 	err := newErrorList(10)
-	p := c.load(noPos, importPath, nil, err).wait() //TODO -noPos, must provide the real thing.
+	p := c.load(Position{}, importPath, nil, err).wait()
 	if err := err.error(); err != nil {
 		return nil, err
 	}
@@ -306,8 +304,7 @@ type SourceFile struct {
 	Scope         *Scope // File scope.
 	TopLevelDecls []Declaration
 	build         bool
-	f             *os.File // Underlying src file.
-	fi            *token.File
+	f             *os.File  // Underlying src file.
 	src           mmap.MMap // Valid only during parsing and checking.
 	srcMu         sync.Mutex
 }
@@ -335,24 +332,6 @@ func (s *SourceFile) init(pkg *Package, path string) {
 	s.build = true
 }
 
-func (s *SourceFile) pos(off int) token.Position {
-	s.srcMu.Lock()
-	defer s.srcMu.Unlock()
-
-	if s.src == nil {
-		return token.Position{}
-	}
-
-	if s.Package.fs == nil {
-		s.Package.fs = token.NewFileSet()
-	}
-	if s.fi == nil {
-		s.fi = s.Package.fs.AddFile(s.Path, -1, len(s.src))
-		s.fi.SetLinesForContent(s.src)
-	}
-	return s.fi.Position(s.fi.Pos(off))
-}
-
 func (s *SourceFile) finit() {
 	s.srcMu.Lock()
 	if s.src != nil {
@@ -377,7 +356,6 @@ type Package struct {
 	SourceFiles  []*SourceFile
 	ctx          *Context
 	errorList    *errorList
-	fs           *token.FileSet
 	importedByMu sync.Mutex
 	ready        chan struct{}
 }
@@ -399,12 +377,11 @@ func newPackage(ctx *Context, importPath, nm string, errorList *errorList) *Pack
 	}
 }
 
-func (p *Package) load(pos func() token.Position, paths []string, syntaxError func(*parser)) {
+func (p *Package) load(pos Position, paths []string, syntaxError func(*parser)) {
 	defer func() {
 		for _, v := range p.SourceFiles {
 			v.finit()
 		}
-		p.fs = nil
 		close(p.ready)
 	}()
 
@@ -417,14 +394,14 @@ func (p *Package) load(pos func() token.Position, paths []string, syntaxError fu
 	for _, path := range paths {
 		f, err := os.Open(path)
 		if err != nil {
-			p.errorList.Add(pos(), err.Error())
+			p.errorList.Add(pos, err.Error())
 			return
 		}
 
 		src, err := mmap.Map(f, 0, 0)
 		if err != nil {
 			f.Close()
-			p.errorList.Add(pos(), err.Error())
+			p.errorList.Add(pos, err.Error())
 			return
 		}
 

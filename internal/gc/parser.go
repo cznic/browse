@@ -18,7 +18,7 @@ var (
 
 // Node is implemented by all AST nodes.
 type Node interface {
-	Pos() token.Position
+	Pos() Position
 }
 
 // Position records SourceFile:Line:Column information.
@@ -29,12 +29,22 @@ type Position struct {
 }
 
 // Pos implements Node.
-func (p Position) Pos() token.Position {
-	return token.Position{Filename: p.SourceFile.Path, Line: int(p.Line), Column: int(p.Column)}
-}
+func (p Position) Pos() Position { return p }
 
 func newPosition(src *SourceFile, line, column int32) Position {
 	return Position{src, line, column}
+}
+
+func (p Position) Filename() string {
+	if p.SourceFile != nil {
+		return p.SourceFile.Path
+	}
+
+	return ""
+}
+
+func (p Position) position() token.Position {
+	return token.Position{Filename: p.Filename(), Line: int(p.Line), Column: int(p.Column)}
 }
 
 // Token represents the position and value of a lexeme.
@@ -78,7 +88,7 @@ func (p *parser) init(src *SourceFile, l *lexer) {
 	p.sourceFile = src
 }
 
-func (p *parser) err(pos token.Position, msg string, args ...interface{}) {
+func (p *parser) err(pos Position, msg string, args ...interface{}) {
 	p.sourceFile.Package.errorList.Add(pos, fmt.Sprintf(msg, args...))
 }
 
@@ -158,18 +168,12 @@ func (p *parser) not2(toks ...token.Token) bool {
 	return true
 }
 
-func (p *parser) pos() Position {
-	return newPosition(p.sourceFile, p.line, p.column)
-}
-
-func (p *parser) tokenPosition() token.Position {
-	return token.Position{Filename: p.sourceFile.Path, Offset: int(p.off), Line: int(p.line), Column: int(p.column)}
-}
+func (p *parser) pos() Position { return newPosition(p.sourceFile, p.line, p.column) }
 
 func (p *parser) strLit(s string) string {
 	value, err := strconv.Unquote(s)
 	if err != nil {
-		p.err(p.tokenPosition(), "%s: %q", err, s)
+		p.err(p.pos(), "%s: %q", err, s)
 		return ""
 	}
 
@@ -180,7 +184,7 @@ func (p *parser) strLit(s string) string {
 	return value
 }
 
-func (p *parser) commentHandler(_ token.Position, lit []byte) {
+func (p *parser) commentHandler(_ Position, lit []byte) {
 	if p.sourceFile.build && bytes.HasPrefix(lit, buildMark) {
 		p.buildDirective(lit)
 	}
@@ -270,11 +274,10 @@ func (p *parser) importSpec() {
 	}
 	switch p.c {
 	case token.STRING:
-		off := p.off
 		ip := p.strLit(string(p.l.lit))
 		if !p.sourceFile.Package.ctx.ignoreImports {
 			spec := newImportSpec(p.tok(), p.off, dot, qualifier, ip)
-			spec.Package = p.sourceFile.Package.ctx.load(func() token.Position { return p.sourceFile.pos(int(off)) }, ip, nil, p.sourceFile.Package.errorList)
+			spec.Package = p.sourceFile.Package.ctx.load(p.pos(), ip, nil, p.sourceFile.Package.errorList)
 			p.sourceFile.ImportSpecs = append(p.sourceFile.ImportSpecs, spec)
 		}
 		p.n()
@@ -1455,7 +1458,7 @@ func (p *parser) topLevelDeclList() {
 // 	"package" IDENT ';' imports topLevelDeclList
 func (p *parser) file() {
 	if p.syntaxError == nil {
-		p.syntaxError = func(*parser) { p.err(p.tokenPosition(), "syntax error") }
+		p.syntaxError = func(*parser) { p.err(p.pos(), "syntax error") }
 	}
 	p.n()
 	if p.must2(token.PACKAGE, token.IDENT, token.SEMICOLON) && p.sourceFile.build {

@@ -437,9 +437,9 @@ func testScannerStates(t *testing.T) {
 			b := []byte(src)
 			var errs, errs2 scanner.ErrorList
 			l.init(b)
-			l.errHandler = func(pos token.Position, msg string, args ...interface{}) {
+			l.errHandler = func(pos Position, msg string, args ...interface{}) {
 				errCnt++
-				errs.Add(pos, fmt.Sprintf(msg, args...))
+				errs.Add(pos.position(), fmt.Sprintf(msg, args...))
 			}
 			ss.Init(fi, b, func(pos token.Position, msg string) {
 				errs2.Add(pos, msg)
@@ -450,8 +450,8 @@ func testScannerStates(t *testing.T) {
 				errs2 = nil
 				l.errorCount = 0
 				ss.ErrorCount = 0
-				off, line, column, tok := l.scan()
-				pos := newTokenPosition("", off, line, column)
+				_, line, column, tok := l.scan()
+				pos := newPosition(nil, line, column)
 				lit := string(l.lit)
 				p2, tok2, lit2 := ss.Scan()
 				pos2 := fi.Position(p2)
@@ -463,19 +463,15 @@ func testScannerStates(t *testing.T) {
 							iCase, i, src, src, l.errorCount, ss.ErrorCount, errString(errs), errString(errs2),
 						)
 					}
-					if g, e := pos.Filename, pos2.Filename; g != e {
+					if g, e := pos.Filename(), pos2.Filename; g != e {
 						nerr++
 						t.Errorf("%6d: pos.Filename[%d] %q(|% x|), %v %v (%v %v)", iCase, i, src, src, g, e, pos, pos2)
 					}
-					if g, e := pos.Offset, pos2.Offset; g != e {
-						nerr++
-						t.Errorf("%6d: pos.Offset[%d] %q(|% x|), %v %v (%v %v)", iCase, i, src, src, g, e, pos, pos2)
-					}
-					if g, e := pos.Line, pos2.Line; g != e {
+					if g, e := int(pos.Line), pos2.Line; g != e {
 						nerr++
 						t.Errorf("%6d: pos.Line[%d] %q(|% x|), %v %v (%v %v)", iCase, i, src, src, g, e, pos, pos2)
 					}
-					if g, e := pos.Column, pos2.Column; g != e {
+					if g, e := int(pos.Column), pos2.Column; g != e {
 						nerr++
 						t.Errorf("%6d: pos.Column[%d] %q(|% x|), %v %v (%v %v)", iCase, i, src, src, g, e, pos, pos2)
 					}
@@ -625,7 +621,7 @@ func testScannerBugs(t *testing.T) {
 				nerr++
 				t.Errorf("%v off[%d] %q(|% x|) %v %v", i, j, src, src, g, e)
 			}
-			if g, e := newTokenPosition("", off, line, col).String(), v.pos; g != e {
+			if g, e := newPosition(nil, line, col).position().String(), v.pos; g != e {
 				nerr++
 				t.Errorf("%v pos[%d] %q(|% x|) %q %q", i, j, src, src, g, e)
 			}
@@ -676,8 +672,8 @@ outer:
 		fi := fs.AddFile(path, -1, len(src))
 		var se scanner.ErrorList
 		l.init(src)
-		l.path = path
-		l.commentHandler = func(pos token.Position, lit []byte) {
+		l.sourceFile = &SourceFile{Path: path}
+		l.commentHandler = func(pos Position, lit []byte) {
 			if bytes.HasPrefix(lit, lineDirective) {
 				lit = bytes.TrimSpace(lit[len(lineDirective):])
 				if i := bytes.IndexByte(lit, ':'); i > 0 && i < len(lit)-1 { //TODO last index.
@@ -696,15 +692,15 @@ outer:
 						s = filepath.Join(filepath.Dir(path), s)
 					}
 					if l.off != int32(len(l.src)) {
-						l.path = s
+						l.sourceFile = &SourceFile{Path: s}
 						l.line = int32(ln - 1)
 						l.column = 1
 					}
 				}
 			}
 		}
-		l.errHandler = func(pos token.Position, msg string, arg ...interface{}) {
-			se.Add(pos, fmt.Sprintf(msg, arg...))
+		l.errHandler = func(pos Position, msg string, arg ...interface{}) {
+			se.Add(pos.position(), fmt.Sprintf(msg, arg...))
 		}
 		s.Init(fi, src, nil, 0)
 		files++
@@ -712,7 +708,7 @@ outer:
 			l.errorCount = 0
 			s.ErrorCount = 0
 
-			off, line, column, gt := l.scan()
+			_, line, column, gt := l.scan()
 			if gt == tokenBOM {
 				gt = token.ILLEGAL
 			}
@@ -720,7 +716,9 @@ outer:
 			glit := string(l.lit)
 			pos, et, lit := s.Scan()
 			position := fi.Position(pos)
-			if g, e := newTokenPosition(l.path, off, line, column), position; g != e {
+			g := newPosition(l.sourceFile, line, column).position()
+			g.Offset = position.Offset
+			if e := position; g != e {
 				t.Errorf("%s: position mismatch, expected %s", g, e)
 				continue outer
 			}
@@ -906,7 +904,7 @@ func BenchmarkParser(b *testing.B) {
 
 			b.StartTimer()
 			for i, v := range stdLibPackages {
-				a[i] = ctx.load(noPos, v.ImportPath, nil, errorList)
+				a[i] = ctx.load(Position{}, v.ImportPath, nil, errorList)
 			}
 			for _, v := range a {
 				v.wait()
@@ -953,8 +951,8 @@ func newYlex(l *lexer, p *yparser) *ylex {
 }
 
 func (l *ylex) lex() (token.Position, *y.Symbol) {
-	off, line, column, tok := l.scan()
-	l.pos = newTokenPosition(l.path, off, line, column)
+	_, line, column, tok := l.scan()
+	l.pos = newPosition(l.sourceFile, line, column).position()
 	sym, ok := l.p.tok2sym[tok]
 	if !ok {
 		panic(fmt.Sprintf("%s: missing symbol for token %q", l.pos, tok))
@@ -1251,7 +1249,7 @@ func (p *parser) fail(nm string) string {
 
 func (p *parser) todo() {
 	_, fn, fl, _ := runtime.Caller(1)
-	p.err(p.tokenPosition(), "%q=%q: TODO %v:%v", p.c, p.l.lit, fn, fl) //TODOOK
+	p.err(p.pos(), "%q=%q: TODO %v:%v", p.c, p.l.lit, fn, fl) //TODOOK
 }
 
 func newTestContext() (*Context, error) {
@@ -1272,10 +1270,10 @@ func testParser(t *testing.T, packages []*Package) {
 	errorList := newErrorList(0)
 	for _, v := range packages {
 		ctx.load(
-			noPos,
+			Position{},
 			v.ImportPath,
 			func(p *parser) {
-				p.err(p.tokenPosition(), "syntax error\n----\n%s", p.fail(p.sourceFile.Path))
+				p.err(p.pos(), "syntax error\n----\n%s", p.fail(p.sourceFile.Path))
 			},
 			errorList,
 		).wait()
@@ -1351,7 +1349,7 @@ type errchk struct {
 
 type errchks []errchk
 
-func (e *errchks) comment(pos token.Position, s []byte) {
+func (e *errchks) comment(pos Position, s []byte) {
 	if bytes.HasPrefix(s, generalCommentStart) {
 		s = s[len(generalCommentStart):]
 	}
@@ -1376,7 +1374,7 @@ func (e *errchks) comment(pos token.Position, s []byte) {
 
 	s = s[i+n:]
 	s = bytes.TrimSpace(s)
-	*e = append(*e, errchk{s, pos})
+	*e = append(*e, errchk{s, pos.position()})
 }
 
 func (e errchks) errors(t *testing.T, err scanner.ErrorList, fname string, syntaxOnly bool) {
@@ -1494,7 +1492,7 @@ func testParserErrchk(t *testing.T) {
 				return
 			}
 
-			errors.Add(p.tokenPosition(), fmt.Sprintf("syntax error, lookahead %q=%q, p.l.off %d/%d", p.c, p.l.lit, p.l.off, len(p.l.src)))
+			errors.Add(p.pos().position(), fmt.Sprintf("syntax error, lookahead %q=%q, p.l.off %d/%d", p.c, p.l.lit, p.l.off, len(p.l.src)))
 		}
 		errors = errors[:0]
 		checks = checks[:0]
