@@ -348,7 +348,7 @@ func testScannerStates(t *testing.T) {
 	m := make([]bool, mn+1) // 1-based state.Index.
 	fs := token.NewFileSet()
 	var ss scanner.Scanner
-	l := newLexer(nil)
+	l := NewLexer(nil)
 	nerr := 0
 
 	var cases, sum int
@@ -450,7 +450,7 @@ func testScannerStates(t *testing.T) {
 				errs2 = nil
 				l.errorCount = 0
 				ss.ErrorCount = 0
-				_, line, column, tok := l.scan()
+				_, line, column, tok := l.Scan()
 				pos := newPosition(nil, line, column)
 				lit := string(l.lit)
 				p2, tok2, lit2 := ss.Scan()
@@ -528,7 +528,7 @@ func testScannerBugs(t *testing.T) {
 		tok token.Token
 		lit string
 	}
-	l := newLexer(nil)
+	l := NewLexer(nil)
 	n := *oN
 	nerr := 0
 	cases := 0
@@ -616,7 +616,7 @@ func testScannerBugs(t *testing.T) {
 		bsrc := []byte(src)
 		l.init(bsrc)
 		for j, v := range v.toks {
-			off, line, col, tok := l.scan()
+			off, line, col, tok := l.Scan()
 			if g, e := int(off), v.off; g != e {
 				nerr++
 				t.Errorf("%v off[%d] %q(|% x|) %v %v", i, j, src, src, g, e)
@@ -637,7 +637,7 @@ func testScannerBugs(t *testing.T) {
 				return
 			}
 		}
-		off, _, _, tok := l.scan()
+		off, _, _, tok := l.Scan()
 		if g, e := tok, token.EOF; g != e {
 			nerr++
 			t.Errorf("%v tok %q(|% x|) %q %q", i, src, src, g, e)
@@ -656,7 +656,7 @@ func testScannerBugs(t *testing.T) {
 func testScanner(t *testing.T, paths []string) {
 	fs := token.NewFileSet()
 	var s scanner.Scanner
-	l := newLexer(nil)
+	l := NewLexer(nil)
 	sum := 0
 	toks := 0
 	files := 0
@@ -673,7 +673,7 @@ outer:
 		var se scanner.ErrorList
 		l.init(src)
 		l.file = &path
-		l.commentHandler = func(pos Position, lit []byte) {
+		l.CommentHandler = func(pos Position, lit []byte) {
 			if bytes.HasPrefix(lit, lineDirective) {
 				lit = bytes.TrimSpace(lit[len(lineDirective):])
 				if i := bytes.IndexByte(lit, ':'); i > 0 && i < len(lit)-1 { //TODO last index.
@@ -708,7 +708,7 @@ outer:
 			l.errorCount = 0
 			s.ErrorCount = 0
 
-			_, line, column, gt := l.scan()
+			_, line, column, gt := l.Scan()
 			if gt == tokenBOM {
 				gt = token.ILLEGAL
 			}
@@ -842,9 +842,9 @@ func BenchmarkScanner(b *testing.B) {
 					defer src.Unmap()
 
 					sum += len(src)
-					l := newLexer(src)
+					l := NewLexer(src)
 					for {
-						if _, _, _, tok := l.scan(); tok == token.EOF {
+						if _, _, _, tok := l.Scan(); tok == token.EOF {
 							break
 						}
 					}
@@ -920,7 +920,7 @@ func BenchmarkParser(b *testing.B) {
 }
 
 type ylex struct {
-	*lexer
+	*Lexer
 	lbrace        int
 	lbraceRule    int
 	lbraceStack   []int
@@ -932,15 +932,15 @@ type ylex struct {
 }
 
 func (l *ylex) init(src []byte) {
-	l.lexer.init(src)
+	l.Lexer.init(src)
 	l.lbrace = 0
 	l.lbraceStack = l.lbraceStack[:0]
 	l.loophack = false
 	l.loophackStack = l.loophackStack[:0]
 }
 
-func newYlex(l *lexer, p *yparser) *ylex {
-	yl := &ylex{lexer: l, p: p}
+func newYlex(l *Lexer, p *yparser) *ylex {
+	yl := &ylex{Lexer: l, p: p}
 	for _, v := range p.Rules {
 		if v.Sym.Name == "lbrace" {
 			yl.lbraceRule = v.RuleNum
@@ -951,7 +951,7 @@ func newYlex(l *lexer, p *yparser) *ylex {
 }
 
 func (l *ylex) lex() (token.Position, *y.Symbol) {
-	_, line, column, tok := l.scan()
+	_, line, column, tok := l.Scan()
 	l.pos = newPosition(l.file, line, column).position()
 	sym, ok := l.p.tok2sym[tok]
 	if !ok {
@@ -1180,7 +1180,7 @@ func testParserYacc(t *testing.T, files []string) {
 	)
 	cover = yp.newCover()
 	cn0 := len(cover)
-	l := newLexer(nil)
+	l := NewLexer(nil)
 	yl = newYlex(l, yp)
 	sum := 0
 	toks := 0
@@ -1233,7 +1233,7 @@ func (p *parser) fail(nm string) string {
 		},
 		func(st int) { states = append(states, st) },
 	)
-	yl = newYlex(newLexer(nil), yp)
+	yl = newYlex(NewLexer(nil), yp)
 	yl.init(p.l.src)
 	yp.parse(
 		func(st int) *y.Symbol {
@@ -1292,7 +1292,7 @@ func testParserRejectFS(t *testing.T) {
 
 	ctx.ignoreImports = true
 	yp := newYParser(nil, nil)
-	l := newLexer(nil)
+	l := NewLexer(nil)
 	cases := 0
 	for state, s := range yp0.States {
 		syms, _ := s.Syms0()
@@ -1470,11 +1470,11 @@ func testParserErrchk(t *testing.T) {
 	var (
 		checks errchks
 		errors scanner.ErrorList
-		l      = newLexer(nil)
+		l      = NewLexer(nil)
 	)
 
 	ctx.ignoreImports = true
-	l.commentHandler = checks.comment
+	l.CommentHandler = checks.comment
 	for _, fn := range errchkFiles {
 		src, err := ioutil.ReadFile(fn)
 		if err != nil {
@@ -1498,7 +1498,7 @@ func testParserErrchk(t *testing.T) {
 		checks = checks[:0]
 		p.file()
 		for l.c != classEOF {
-			l.scan()
+			l.Scan()
 		}
 		checks.errors(t, errors, fn, true)
 	}

@@ -3,11 +3,13 @@
 // license that can be found in the LICENSE file.
 
 //TODO $ browse runtime # Takes 10+ seconds to show on r550.
+//TODO nnn<shift-G>
 
 package main
 
 import (
 	"bytes"
+	"go/token"
 	"io/ioutil"
 	"unicode/utf8"
 
@@ -21,28 +23,39 @@ import (
 
 var nl = []byte{'\n'}
 
+type comment struct {
+	column int32
+	len    int32
+}
+
 type file struct {
 	*tk.View
-	browser   *browser
-	lnDigits  int
-	lnOffsets []int
-	lnStyle   wm.Style
-	sf        *gc.SourceFile
-	src       []byte
-	style     wm.Style
+	browser      *browser
+	lnDigits     int
+	lnOffsets    []int
+	lnStyle      wm.Style
+	sf           *gc.SourceFile
+	src          []byte
+	style        wm.Style
+	commentStyle wm.Style
+	comments     map[int32][]comment // line: comments
 }
 
 func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 	color := tcell.NewHexColor(0x999999)
+	commentColor := tcell.NewHexColor(0x0e6e2c)
 	if app.Colors() < 256 {
 		color = tcell.ColorRed
+		commentColor = tcell.ColorGreen
 	}
 	style := app.ChildWindowStyle().ClientArea
 	f := &file{
-		browser: b,
-		lnStyle: wm.Style{Foreground: color, Background: style.Background},
-		sf:      sf,
-		style:   style,
+		browser:      b,
+		commentStyle: wm.Style{Foreground: commentColor, Background: style.Background},
+		comments:     map[int32][]comment{},
+		lnStyle:      wm.Style{Foreground: color, Background: style.Background},
+		sf:           sf,
+		style:        style,
 	}
 
 	var err error
@@ -51,6 +64,10 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 		return nil
 	}
 
+	lx := gc.NewLexer(f.src)
+	lx.CommentHandler = f.commentHandler
+	for tok := token.Token(-1); tok != token.EOF; _, _, _, tok = lx.Scan() {
+	}
 	f.View = tk.NewView(app.Desktop().Root().NewChild(wm.Rectangle{Position: area.Position}), f)
 	if bytes.HasSuffix(f.src, nl) {
 		f.src = f.src[:len(f.src)-1]
@@ -76,6 +93,10 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 	f.SetSize(area.Size)
 	f.SetTitle(sf.Path)
 	return f
+}
+
+func (f *file) commentHandler(pos gc.Position, lit []byte) {
+	f.comments[pos.Line] = append(f.comments[pos.Line], comment{pos.Column, int32(len(lit))})
 }
 
 func (f *file) onClose(w *wm.Window, prev wm.OnCloseHandler) {
@@ -167,8 +188,24 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 		}
 
 		f.Printf(0, line, f.lnStyle, "%*d", f.lnDigits, line+1)
-		s := f.displayString(f.src[f.lnOffsets[line]:f.lnOffsets[line+1]])
-		f.Printf(f.lnDigits+1, line, f.style, "%s", s)
+		src := f.src[f.lnOffsets[line]:f.lnOffsets[line+1]]
+		x := 0
+		for _, v := range f.comments[int32(line+1)] {
+			pre := src[:v.column]
+			src = src[v.column:]
+			w, s := f.displayString(pre)
+			f.Printf(f.lnDigits+1+x, line, f.style, "%s", s)
+			x += w
+			comment := src[:v.len]
+			src = src[v.len:]
+			w, s = f.displayString(comment)
+			f.Printf(f.lnDigits+1+x, line, f.commentStyle, "%s", s)
+			x += w
+		}
+		if len(src) != 0 {
+			_, s := f.displayString(src)
+			f.Printf(f.lnDigits+1+x, line, f.style, "%s", s)
+		}
 	}
 }
 
@@ -197,8 +234,7 @@ func (f *file) displayWidth(s []byte) (w int) {
 	return w
 }
 
-func (f *file) displayString(s []byte) (b []byte) {
-	var w int
+func (f *file) displayString(s []byte) (w int, b []byte) {
 	for len(s) != 0 {
 		r, n := utf8.DecodeRune(s)
 		switch r {
@@ -226,5 +262,5 @@ func (f *file) displayString(s []byte) (b []byte) {
 		}
 		s = s[n:]
 	}
-	return b
+	return w, b
 }

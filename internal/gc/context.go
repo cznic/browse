@@ -387,10 +387,10 @@ func (p *Package) load(pos Position, paths []string, syntaxError func(*parser)) 
 		close(p.ready)
 	}()
 
-	l := newLexer(nil)
+	l := NewLexer(nil)
 	y := newParser(nil, nil)
 	l.errHandler = y.err
-	l.commentHandler = y.commentHandler
+	l.CommentHandler = y.commentHandler
 	y.syntaxError = syntaxError
 
 	for _, path := range paths {

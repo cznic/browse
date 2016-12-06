@@ -91,13 +91,12 @@ func (b *browser) incNewWinPos() {
 	}
 }
 
-func (b *browser) openFile(area wm.Rectangle, sf *gc.SourceFile) {
+func (b *browser) openFile(area wm.Rectangle, sf *gc.SourceFile) *file {
 	f := b.files[sf.Path]
 	if f == nil {
 		f = newFile(b, area, sf)
 	}
-	f.BringToFront()
-	f.SetFocus(true)
+	return f
 }
 
 func (b *browser) onKey(w *wm.Window, prev wm.OnKeyHandler, key tcell.Key, mod tcell.ModMask, r rune) bool {
@@ -118,8 +117,13 @@ func (b *browser) setup() {
 	app.SetDoubleClickDuration(0)
 	app.SetDesktop(app.NewDesktop())
 	app.OnKey(b.onKey, nil)
+	var f *file
 	for _, v := range b.pkg.SourceFiles {
-		b.openFile(wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: 80, Height: 24}}, v)
+		f = b.openFile(wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: 80, Height: 24}}, v)
 		b.incNewWinPos()
+	}
+	if f != nil {
+		f.BringToFront()
+		f.SetFocus(true)
 	}
 }

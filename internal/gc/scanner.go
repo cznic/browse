@@ -60,8 +60,9 @@ var (
 	}
 )
 
-type lexer struct {
-	commentHandler func(pos Position, lit []byte)
+// Lexer tokenizes source code.
+type Lexer struct {
+	CommentHandler func(pos Position, lit []byte)
 	errHandler     func(pos Position, msg string, args ...interface{})
 	errorCount     int // Number of errors encountered.
 	file           *string
@@ -80,21 +81,22 @@ type lexer struct {
 	c byte // Current class.
 }
 
-func newLexer(src []byte) *lexer {
-	l := &lexer{
+// NewLexer returns a newly created Lexer.
+func NewLexer(src []byte) *Lexer {
+	l := &Lexer{
 		column: 0,
 		line:   1,
 		src:    src,
 	}
 	if bytes.HasPrefix(src, bom) {
-		l.off = 3
-		l.column = 2
+		l.off = int32(len(bom))
+		l.column = int32(len([]rune(string(bom))))
 	}
 	l.n()
 	return l
 }
 
-func (l *lexer) init(src []byte) *lexer {
+func (l *Lexer) init(src []byte) *Lexer {
 	l.commentOfs = -1
 	l.errorCount = 0
 	l.lit = nil
@@ -113,7 +115,7 @@ func (l *lexer) init(src []byte) *lexer {
 	return l
 }
 
-func (l *lexer) err(pos Position, msg string, args ...interface{}) {
+func (l *Lexer) err(pos Position, msg string, args ...interface{}) {
 	l.errorCount++
 	if l.errHandler != nil {
 		l.errHandler(pos, msg, args...)
@@ -121,7 +123,7 @@ func (l *lexer) err(pos Position, msg string, args ...interface{}) {
 }
 
 // Returns class.
-func (l *lexer) n() byte { // n == next
+func (l *Lexer) n() byte { // n == next
 	if l.off == int32(len(l.src)) {
 		if l.c != classEOF {
 			l.column++
@@ -160,7 +162,7 @@ func (l *lexer) n() byte { // n == next
 	return l.c
 }
 
-func (l *lexer) octals(max int) (n int) {
+func (l *Lexer) octals(max int) (n int) {
 	for max != 0 && l.c >= '0' && l.c <= '7' {
 		l.n()
 		n++
@@ -169,13 +171,13 @@ func (l *lexer) octals(max int) (n int) {
 	return n
 }
 
-func (l *lexer) decimals() {
+func (l *Lexer) decimals() {
 	for l.c >= '0' && l.c <= '9' {
 		l.n()
 	}
 }
 
-func (l *lexer) exponent() token.Token {
+func (l *Lexer) exponent() token.Token {
 	switch l.c {
 	case 'e', 'E':
 		switch l.n() {
@@ -193,7 +195,7 @@ func (l *lexer) exponent() token.Token {
 	return token.FLOAT
 }
 
-func (l *lexer) hexadecimals(max int) (n int) {
+func (l *Lexer) hexadecimals(max int) (n int) {
 	for max != 0 && (l.c >= '0' && l.c <= '9' || l.c >= 'a' && l.c <= 'f' || l.c >= 'A' && l.c <= 'F') {
 		l.n()
 		n++
@@ -206,14 +208,14 @@ func isIdentNext(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' || c >= '0' && c <= '9' || c == classNonASCII
 }
 
-func (l *lexer) ident() token.Token {
+func (l *Lexer) ident() token.Token {
 	for l.c >= 'a' && l.c <= 'z' || l.c >= 'A' && l.c <= 'Z' || l.c == '_' || l.c >= '0' && l.c <= '9' || l.c == classNonASCII {
 		l.n()
 	}
 	return token.IDENT
 }
 
-func (l *lexer) skip() rune {
+func (l *Lexer) skip() rune {
 	if c := l.c; c < 0x80 {
 		l.n()
 		return rune(c)
@@ -231,7 +233,7 @@ func (l *lexer) skip() rune {
 	return r
 }
 
-func (l *lexer) stringEscFail() bool {
+func (l *Lexer) stringEscFail() bool {
 	switch l.c {
 	case '\n':
 		l.err(newPosition(l.file, l.line, l.column), "illegal character %#U in escape sequence", l.c)
@@ -250,7 +252,7 @@ func (l *lexer) stringEscFail() bool {
 	return false
 }
 
-func (l *lexer) charEscFail() {
+func (l *Lexer) charEscFail() {
 	switch l.c {
 	case '\n':
 		l.err(newPosition(l.file, l.line, l.column), "illegal character %#U in escape sequence", l.c)
@@ -265,16 +267,17 @@ func (l *lexer) charEscFail() {
 	}
 }
 
-func (l *lexer) scan() (off, line, column int32, tok token.Token) {
+// Scan returns the next token and its offset, line and column.
+func (l *Lexer) Scan() (off, line, column int32, tok token.Token) {
 skip:
 	off, line, column, tok = l.scan0()
 	if tok == token.COMMENT {
-		if l.commentHandler != nil {
+		if l.CommentHandler != nil {
 			end := l.off
 			if l.c != classEOF {
 				end--
 			}
-			l.commentHandler(newPosition(l.file, line, column), l.src[off:end])
+			l.CommentHandler(newPosition(l.file, line, column), l.src[off:end])
 		}
 		if l.commentOfs < 0 {
 			l.commentOfs = off
@@ -320,7 +323,7 @@ skip:
 	return off, line, column, tok
 }
 
-func (l *lexer) scan0() (off, line, column int32, tok token.Token) {
+func (l *Lexer) scan0() (off, line, column int32, tok token.Token) {
 skip:
 	off = l.off - 1
 	line = l.line
@@ -561,12 +564,12 @@ skip:
 					case '/':
 						l.n()
 						if hasNL {
-							if l.commentHandler != nil {
+							if l.CommentHandler != nil {
 								end := l.off
 								if l.c != classEOF {
 									end--
 								}
-								l.commentHandler(newPosition(l.file, line, column), l.src[off:end])
+								l.CommentHandler(newPosition(l.file, line, column), l.src[off:end])
 							}
 							return off, line, column, tokenNL
 						}

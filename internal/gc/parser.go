@@ -64,7 +64,7 @@ func newToken(pos Position, val string) Token {
 
 type parser struct {
 	c             token.Token
-	l             *lexer
+	l             *Lexer
 	loophackStack []bool
 	sourceFile    *SourceFile
 	syntaxError   func(*parser)
@@ -76,14 +76,14 @@ type parser struct {
 	loophack bool
 }
 
-func newParser(src *SourceFile, l *lexer) *parser {
+func newParser(src *SourceFile, l *Lexer) *parser {
 	return &parser{
 		l:          l,
 		sourceFile: src,
 	}
 }
 
-func (p *parser) init(src *SourceFile, l *lexer) {
+func (p *parser) init(src *SourceFile, l *Lexer) {
 	p.l = l
 	p.loophack = false
 	p.loophackStack = p.loophackStack[:0]
@@ -96,7 +96,7 @@ func (p *parser) err(pos Position, msg string, args ...interface{}) {
 
 func (p *parser) n() token.Token {
 more:
-	switch p.off, p.line, p.column, p.c = p.l.scan(); p.c {
+	switch p.off, p.line, p.column, p.c = p.l.Scan(); p.c {
 	case token.FOR, token.IF, token.SELECT, token.SWITCH:
 		p.loophack = true
 	case token.LPAREN, token.LBRACK:
