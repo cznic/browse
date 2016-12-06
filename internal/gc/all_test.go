@@ -672,7 +672,7 @@ outer:
 		fi := fs.AddFile(path, -1, len(src))
 		var se scanner.ErrorList
 		l.init(src)
-		l.sourceFile = &SourceFile{Path: path}
+		l.file = &path
 		l.commentHandler = func(pos Position, lit []byte) {
 			if bytes.HasPrefix(lit, lineDirective) {
 				lit = bytes.TrimSpace(lit[len(lineDirective):])
@@ -692,7 +692,7 @@ outer:
 						s = filepath.Join(filepath.Dir(path), s)
 					}
 					if l.off != int32(len(l.src)) {
-						l.sourceFile = &SourceFile{Path: s}
+						l.file = &s
 						l.line = int32(ln - 1)
 						l.column = 1
 					}
@@ -716,7 +716,7 @@ outer:
 			glit := string(l.lit)
 			pos, et, lit := s.Scan()
 			position := fi.Position(pos)
-			g := newPosition(l.sourceFile, line, column).position()
+			g := newPosition(l.file, line, column).position()
 			g.Offset = position.Offset
 			if e := position; g != e {
 				t.Errorf("%s: position mismatch, expected %s", g, e)
@@ -952,7 +952,7 @@ func newYlex(l *lexer, p *yparser) *ylex {
 
 func (l *ylex) lex() (token.Position, *y.Symbol) {
 	_, line, column, tok := l.scan()
-	l.pos = newPosition(l.sourceFile, line, column).position()
+	l.pos = newPosition(l.file, line, column).position()
 	sym, ok := l.p.tok2sym[tok]
 	if !ok {
 		panic(fmt.Sprintf("%s: missing symbol for token %q", l.pos, tok))

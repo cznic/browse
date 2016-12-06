@@ -21,23 +21,23 @@ type Node interface {
 	Pos() Position
 }
 
-// Position records SourceFile:Line:Column information.
+// Position records File:Line:Column information.
 type Position struct {
-	SourceFile *SourceFile
-	Line       int32
-	Column     int32
+	File   *string
+	Line   int32
+	Column int32
 }
 
 // Pos implements Node.
 func (p Position) Pos() Position { return p }
 
-func newPosition(src *SourceFile, line, column int32) Position {
-	return Position{src, line, column}
+func newPosition(file *string, line, column int32) Position {
+	return Position{file, line, column}
 }
 
 func (p Position) Filename() string {
-	if p.SourceFile != nil {
-		return p.SourceFile.Path
+	if p.File != nil {
+		return *p.File
 	}
 
 	return ""
@@ -121,7 +121,7 @@ more:
 }
 
 func (p *parser) tok() Token {
-	return newToken(newPosition(p.sourceFile, p.line, p.column), string(p.l.lit))
+	return newToken(newPosition(&p.sourceFile.Path, p.line, p.column), string(p.l.lit))
 }
 
 func (p *parser) opt(tok token.Token) bool {
@@ -170,7 +170,7 @@ func (p *parser) not2(toks ...token.Token) bool {
 	return true
 }
 
-func (p *parser) pos() Position { return newPosition(p.sourceFile, p.line, p.column) }
+func (p *parser) pos() Position { return newPosition(&p.sourceFile.Path, p.line, p.column) }
 
 func (p *parser) strLit(s string) string {
 	value, err := strconv.Unquote(s)
