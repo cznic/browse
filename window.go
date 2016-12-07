@@ -13,9 +13,6 @@ import (
 	"io/ioutil"
 	"unicode/utf8"
 
-	/*
-	 */
-
 	"github.com/cznic/browse/internal/gc"
 	"github.com/cznic/mathutil"
 	"github.com/cznic/wm"
@@ -100,7 +97,7 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 
 func (f *file) commentHandler(pos gc.Position, lit []byte) {
 	for _, v := range bytes.Split(lit, nl) {
-		f.comments[pos.Line] = append(f.comments[pos.Line], comment{pos.Column, int32(len(v))})
+		f.comments[pos.Line] = append(f.comments[pos.Line], comment{pos.Column - 1, int32(len(v))})
 		pos.Line++
 		pos.Column = 1
 	}
