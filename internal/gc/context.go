@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -267,7 +268,7 @@ func (c *Context) load(pos Position, importPath string, syntaxError func(*parser
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				errList.Add(Position{}, fmt.Sprint(err))
+				errList.Add(Position{}, fmt.Sprintf("%s\nPANIC: %v", debug.Stack(), err))
 			}
 		}()
 
@@ -288,7 +289,7 @@ func (c *Context) load(pos Position, importPath string, syntaxError func(*parser
 // Load finds the package in importPath and returns the resulting Package or an error if any.
 func (c *Context) Load(importPath string) (*Package, error) {
 	err := newErrorList(10)
-	p := c.load(Position{}, importPath, nil, err).wait()
+	p := c.load(Position{}, importPath, nil, err).waitFor()
 	if err := err.error(); err != nil {
 		return nil, err
 	}
@@ -421,7 +422,7 @@ func (p *Package) load(pos Position, paths []string, syntaxError func(*parser)) 
 	//TODO p.check()
 }
 
-func (p *Package) wait() *Package {
+func (p *Package) waitFor() *Package {
 	<-p.ready
 	return p
 }

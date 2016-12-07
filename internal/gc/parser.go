@@ -1427,8 +1427,7 @@ func (p *parser) fnBody() {
 // |	topLevelDeclList commonDecl ';'
 func (p *parser) topLevelDeclList() {
 	for _, v := range p.sourceFile.ImportSpecs {
-		v.Package.wait()
-		//TODO declare import qualifiers.
+		v.Package.waitFor()
 	}
 	for p.c != token.EOF {
 		switch p.c {

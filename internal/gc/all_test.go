@@ -907,7 +907,7 @@ func BenchmarkParser(b *testing.B) {
 				a[i] = ctx.load(Position{}, v.ImportPath, nil, errorList)
 			}
 			for _, v := range a {
-				v.wait()
+				v.waitFor()
 			}
 			if err := errorList.error(); err != nil {
 				b.Fatal(err)
@@ -1276,7 +1276,7 @@ func testParser(t *testing.T, packages []*Package) {
 				p.err(p.pos(), "syntax error\n----\n%s", p.fail(p.sourceFile.Path))
 			},
 			errorList,
-		).wait()
+		).waitFor()
 		if err := errorList.error(); err != nil {
 			t.Fatal(err)
 		}
