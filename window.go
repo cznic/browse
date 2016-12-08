@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//TODO $ browse runtime # Takes 10+ seconds to show on r550.
 //TODO nnn<shift-G>
 
 package main

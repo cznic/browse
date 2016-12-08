@@ -122,7 +122,7 @@ func (b *browser) onPaintClientArea(w *wm.Window, prev wm.OnPaintHandler, ctx wm
 	}
 
 	const (
-		logo   = "github.com/cznic/browse"
+		logo   = "http://github.com/cznic/browse"
 		border = 1
 	)
 	sz := w.Size()
@@ -134,6 +134,8 @@ func (b *browser) setup() {
 	app.SetDesktop(app.NewDesktop())
 	app.OnKey(b.onKey, nil)
 	app.Desktop().Root().OnPaintClientArea(b.onPaintClientArea, nil)
+	app.Desktop().Root().BeginUpdate()
+	defer app.Desktop().Root().EndUpdate()
 	var f *file
 	for _, v := range b.pkg.SourceFiles {
 		f = b.openFile(wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: 80, Height: 24}}, v)
