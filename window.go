@@ -90,8 +90,8 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 	f.OnKey(f.onKey, nil)
 	f.OnPaintClientArea(f.onPaint, nil)
 	f.SetCloseButton(true)
-	f.SetSize(area.Size)
 	f.SetTitle(sf.Path)
+	f.SetSize(area.Size)
 	return f
 }
 
