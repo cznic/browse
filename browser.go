@@ -45,6 +45,7 @@ type browser struct {
 	files     map[string]*file
 	newWinPos wm.Position
 	pkg       *gc.Package
+	logoStyle wm.Style
 }
 
 func newBrowser(ctx *gc.Context) *browser {
@@ -72,6 +73,8 @@ func (b *browser) run(pkg *gc.Package) (err error) {
 	if colors < 256 {
 		theme = theme8
 	}
+
+	b.logoStyle = wm.Style{Background: theme.Desktop.ClientArea.Background, Foreground: tcell.ColorWhite}
 	if app, err = wm.NewApplication(theme); err != nil {
 		return err
 	}
@@ -113,10 +116,24 @@ func (b *browser) onKey(w *wm.Window, prev wm.OnKeyHandler, key tcell.Key, mod t
 	return false
 }
 
+func (b *browser) onPaintClientArea(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext) {
+	if prev != nil {
+		prev(w, nil, ctx)
+	}
+
+	const (
+		logo   = "github.com/cznic/browse"
+		border = 1
+	)
+	sz := w.Size()
+	w.Printf(sz.Width-border-len(logo), sz.Height-border-1, b.logoStyle, logo)
+}
+
 func (b *browser) setup() {
 	app.SetDoubleClickDuration(0)
 	app.SetDesktop(app.NewDesktop())
 	app.OnKey(b.onKey, nil)
+	app.Desktop().Root().OnPaintClientArea(b.onPaintClientArea, nil)
 	var f *file
 	for _, v := range b.pkg.SourceFiles {
 		f = b.openFile(wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: 80, Height: 24}}, v)
