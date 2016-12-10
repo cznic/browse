@@ -67,7 +67,7 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 	lx.CommentHandler = f.commentHandler
 	for tok := token.Token(-1); tok != token.EOF; _, _, _, tok = lx.Scan() {
 	}
-	f.View = tk.NewView(app.Desktop().Root().NewChild(wm.Rectangle{Position: area.Position}), f)
+	f.View = tk.NewView(f.browser.desktop.Root().NewChild(wm.Rectangle{Position: area.Position}), f)
 	if bytes.HasSuffix(f.src, nl) {
 		f.src = f.src[:len(f.src)-1]
 	}

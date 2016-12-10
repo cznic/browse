@@ -42,10 +42,11 @@ var (
 
 type browser struct {
 	ctx       *gc.Context
+	desktop   *wm.Desktop
 	files     map[string]*file
+	logoStyle wm.Style
 	newWinPos wm.Position
 	pkg       *gc.Package
-	logoStyle wm.Style
 }
 
 func newBrowser(ctx *gc.Context) *browser {
@@ -79,17 +80,18 @@ func (b *browser) run(pkg *gc.Package) (err error) {
 		return err
 	}
 
+	b.desktop = app.NewDesktop()
 	b.pkg = pkg
 	return app.Run(b.setup)
 }
 
 func (b *browser) incNewWinPos() {
 	b.newWinPos.X += 3
-	if b.newWinPos.X > app.Desktop().Root().Size().Width/2 {
+	if b.newWinPos.X > b.desktop.Root().Size().Width/2 {
 		b.newWinPos.X = 2
 	}
 	b.newWinPos.Y += 3
-	if b.newWinPos.Y > app.Desktop().Root().Size().Height/2 {
+	if b.newWinPos.Y > b.desktop.Root().Size().Height/2 {
 		b.newWinPos.Y = 2
 	}
 }
@@ -128,17 +130,14 @@ func (b *browser) onPaintClientArea(w *wm.Window, prev wm.OnPaintHandler, ctx wm
 	sz := w.Size()
 	w.Printf(sz.Width-border-len(logo), sz.Height-border-1, b.logoStyle, logo)
 	if debug {
-		w.Printf(sz.Width-border-len(logo), sz.Height-border, b.logoStyle, "%v", app.Desktop().Root().Rendered())
+		w.Printf(sz.Width-border-len(logo), sz.Height-border, b.logoStyle, "%v", b.desktop.Root().Rendered())
 	}
 }
 
 func (b *browser) setup() {
 	app.SetDoubleClickDuration(0)
-	app.SetDesktop(app.NewDesktop())
 	app.OnKey(b.onKey, nil)
-	app.Desktop().Root().OnPaintClientArea(b.onPaintClientArea, nil)
-	app.Desktop().Root().BeginUpdate()
-	defer app.Desktop().Root().EndUpdate()
+	b.desktop.Root().OnPaintClientArea(b.onPaintClientArea, nil)
 	var f *file
 	for _, v := range b.pkg.SourceFiles {
 		f = b.openFile(wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: 80, Height: 24}}, v)
@@ -148,4 +147,5 @@ func (b *browser) setup() {
 		f.BringToFront()
 		f.SetFocus(true)
 	}
+	b.desktop.Show()
 }
