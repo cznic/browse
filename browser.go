@@ -127,6 +127,9 @@ func (b *browser) onPaintClientArea(w *wm.Window, prev wm.OnPaintHandler, ctx wm
 	)
 	sz := w.Size()
 	w.Printf(sz.Width-border-len(logo), sz.Height-border-1, b.logoStyle, logo)
+	if debug {
+		w.Printf(sz.Width-border-len(logo), sz.Height-border, b.logoStyle, "%v", app.Desktop().Root().Rendered())
+	}
 }
 
 func (b *browser) setup() {
