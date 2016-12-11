@@ -78,7 +78,7 @@ type Context struct {
 }
 
 // NewContext returns a newly created Context. tags are the build tags
-// considered when loading packages having build directves (see
+// considered when loading packages having build directives (see
 // https://golang.org/pkg/go/build/#hdr-Build_Constraints for details).
 // searchPaths are examined when looking for a package to load.
 func NewContext(goos, goarch string, tags, searchPaths []string) (*Context, error) {

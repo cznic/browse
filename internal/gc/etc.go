@@ -27,7 +27,7 @@ func newErrorList(limit int) *errorList {
 
 func (l *errorList) Add(pos Position, msg string) {
 	l.mu.Lock()
-	if l.limit <= 0 {
+	if l.limit == 0 {
 		l.mu.Unlock()
 		panic(nil)
 	}

@@ -68,6 +68,7 @@ type parser struct {
 	c             token.Token
 	l             *Lexer
 	loophackStack []bool
+	scope         *Scope
 	sourceFile    *SourceFile
 	syntaxError   func(*parser)
 
@@ -75,7 +76,8 @@ type parser struct {
 	line   int32
 	off    int32
 
-	loophack bool
+	ignoreRedeclarations bool
+	loophack             bool
 }
 
 func newParser(src *SourceFile, l *Lexer) *parser {
@@ -90,6 +92,7 @@ func (p *parser) init(src *SourceFile, l *Lexer) {
 	p.loophack = false
 	p.loophackStack = p.loophackStack[:0]
 	p.sourceFile = src
+	p.ignoreRedeclarations = true
 }
 
 func (p *parser) err(pos Position, msg string, args ...interface{}) {
@@ -250,6 +253,19 @@ func (p *parser) buildDirective(b []byte) {
 	p.sourceFile.build = false
 }
 
+func (p *parser) push(s *Scope) {
+	s.Parent = p.scope
+	p.scope = s
+}
+
+func (p *parser) pop() {
+	if p.scope.Kind == PackageScope {
+		panic("internal error")
+	}
+
+	p.scope = p.scope.Parent
+}
+
 // ImportSpec is an import declaration.
 type ImportSpec struct {
 	Dot        bool     // The `import . "foo/bar"` variant is used.
@@ -363,13 +379,17 @@ func (p *parser) imports() {
 // identList:
 // 	IDENT
 // |	identList ',' IDENT
-func (p *parser) identList() {
+func (p *parser) identList() (l []Token, o []int32) {
 	switch p.c {
 	case token.IDENT:
+		l = []Token{p.tok()}
+		o = []int32{p.off}
 		p.n()
 		for p.opt(token.COMMA) && p.c != tokenGTGT {
 			switch p.c {
 			case token.IDENT:
+				l = append(l, p.tok())
+				o = append(o, p.off)
 				p.n()
 			default:
 				p.syntaxError(p)
@@ -378,6 +398,7 @@ func (p *parser) identList() {
 	default:
 		p.syntaxError(p)
 	}
+	return l, o
 }
 
 // compLitExpr:
@@ -707,7 +728,10 @@ func (p *parser) exprList() {
 // |	identList typ
 // |	identList typ '=' exprList
 func (p *parser) constSpec() {
-	p.identList()
+	l, o := p.identList()
+	for i, v := range l {
+		p.scope.declare(p, newConstDecl(v, o[i]))
+	}
 	switch p.c {
 	case token.RPAREN, token.SEMICOLON:
 		return
@@ -1257,8 +1281,10 @@ func (p *parser) ifHeader() {
 // 	BODY stmtList '}'
 func (p *parser) loopBody() {
 	p.must(tokenBODY)
+	p.push(newScope(BlockScope, nil))
 	p.stmtList()
 	p.must(token.RBRACE)
+	p.pop()
 }
 
 // elseIfList:
@@ -1282,8 +1308,10 @@ func (p *parser) compoundStmt() {
 	switch p.c {
 	case token.LBRACE:
 		p.n()
+		p.push(newScope(BlockScope, nil))
 		p.stmtList()
 		p.must(token.RBRACE)
+		p.pop()
 	case token.SEMICOLON:
 		p.syntaxError(p)
 	default:
@@ -1299,6 +1327,7 @@ func (p *parser) compoundStmt() {
 // |	caseBlockList "default" ':' stmtList
 func (p *parser) caseBlockList() {
 	for {
+		p.push(newScope(BlockScope, nil))
 		switch p.c {
 		case token.CASE:
 			p.n()
@@ -1316,6 +1345,7 @@ func (p *parser) caseBlockList() {
 			p.syntaxError(p)
 			p.skip(token.COLON)
 		default:
+			p.pop()
 			if p.c != token.RBRACE {
 				p.syntaxError(p)
 				p.skip(token.RBRACE)
@@ -1324,6 +1354,7 @@ func (p *parser) caseBlockList() {
 		}
 
 		p.stmtList()
+		p.pop()
 	}
 }
 
@@ -1363,6 +1394,7 @@ more:
 	case token.FALLTHROUGH:
 		p.n()
 	case token.FOR:
+		p.push(newScope(BlockScope, nil))
 		switch p.n() {
 		case token.RANGE:
 			p.n()
@@ -1383,16 +1415,19 @@ more:
 			p.skip(tokenBODY)
 		}
 		p.loopBody()
+		p.pop()
 	case token.GOTO:
 		p.n()
 		p.must(token.IDENT)
 	case token.IF:
 		p.n()
+		p.push(newScope(BlockScope, nil))
 		p.ifHeader()
 		p.loopBody()
 		if p.elseIfList() {
 			p.compoundStmt()
 		}
+		p.pop()
 	case token.RETURN:
 		p.n()
 		if p.not2(token.SEMICOLON, token.RBRACE) {
@@ -1405,14 +1440,20 @@ more:
 	case token.SELECT:
 		p.n()
 		p.must(tokenBODY)
+		p.push(newScope(BlockScope, nil))
 		p.caseBlockList()
 		p.must(token.RBRACE)
+		p.pop()
 	case token.SWITCH:
 		p.n()
+		p.push(newScope(BlockScope, nil))
 		p.ifHeader()
 		p.must(tokenBODY)
+		p.push(newScope(BlockScope, nil))
 		p.caseBlockList()
 		p.must(token.RBRACE)
+		p.pop()
+		p.pop()
 	case token.CONST, token.TYPE, token.VAR:
 		p.commonDecl()
 	case token.LBRACE:
@@ -1441,8 +1482,10 @@ func (p *parser) stmtList() {
 // |	'{' stmtList '}'
 func (p *parser) fnBody() {
 	if p.opt(token.LBRACE) {
+		p.push(newScope(BlockScope, nil))
 		p.stmtList()
 		p.must(token.RBRACE)
+		p.pop()
 	}
 }
 
@@ -1452,6 +1495,7 @@ func (p *parser) fnBody() {
 // |	topLevelDeclList commonDecl ';'
 func (p *parser) topLevelDeclList() {
 	for p.c != token.EOF {
+		p.scope = p.sourceFile.Package.Scope
 		switch p.c {
 		case token.FUNC:
 			switch p.n() {
@@ -1522,5 +1566,8 @@ func (p *parser) file() {
 		}
 		p.imports()
 		p.topLevelDeclList()
+		if p.scope != nil && p.scope.Kind != PackageScope {
+			panic("internal error")
+		}
 	}
 }

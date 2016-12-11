@@ -34,7 +34,11 @@ func (b *Bindings) declare(p *parser, d Declaration) {
 		return
 	}
 
-	panic("TODO")
+	if p.ignoreRedeclarations {
+		return
+	}
+
+	p.err(d.Pos(), "%v redeclared in this block\n\tprevious declaration at %v", d.Name(), ex.Pos())
 }
 
 // ---------------------------------------------------------------- declaration
@@ -98,6 +102,8 @@ func (s *Scope) declare(p *parser, d Declaration) {
 	}
 
 	switch d.(type) {
+	case *ConstDecl:
+		s.Bindings.declare(p, d)
 	case *ImportSpec:
 		if s.Kind != FileScope { //TODO-
 			panic("internal error")

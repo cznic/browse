@@ -1316,6 +1316,7 @@ func testParserRejectFS(t *testing.T) {
 			pkg := newPackage(ctx, "", "", newErrorList(-1))
 			sf := newSourceFile(pkg, "", nil, nil)
 			p := newParser(sf, l)
+			p.ignoreRedeclarations = true
 			off := int32(-1)
 			p.syntaxError = func(*parser) {
 				if off < 0 {
