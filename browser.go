@@ -10,6 +10,12 @@ import (
 	"github.com/gdamore/tcell"
 	"os"
 	"runtime"
+	"time"
+)
+
+const (
+	logo   = "http://github.com/cznic/browse"
+	border = 1
 )
 
 var (
@@ -122,11 +128,6 @@ func (b *browser) onPaintClientArea(w *wm.Window, prev wm.OnPaintHandler, ctx wm
 	if prev != nil {
 		prev(w, nil, ctx)
 	}
-
-	const (
-		logo   = "http://github.com/cznic/browse"
-		border = 1
-	)
 	sz := w.Size()
 	w.Printf(sz.Width-border-len(logo), sz.Height-border-1, b.logoStyle, logo)
 	if debug {
@@ -137,7 +138,8 @@ func (b *browser) onPaintClientArea(w *wm.Window, prev wm.OnPaintHandler, ctx wm
 func (b *browser) setup() {
 	app.SetDoubleClickDuration(0)
 	app.OnKey(b.onKey, nil)
-	b.desktop.Root().OnPaintClientArea(b.onPaintClientArea, nil)
+	r := b.desktop.Root()
+	r.OnPaintClientArea(b.onPaintClientArea, nil)
 	var f *file
 	for _, v := range b.pkg.SourceFiles {
 		f = b.openFile(wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: 80, Height: 24}}, v)
@@ -146,6 +148,18 @@ func (b *browser) setup() {
 	if f != nil {
 		f.BringToFront()
 		f.SetFocus(true)
+	}
+	if debug {
+		go func() {
+			for range time.Tick(time.Second) {
+				sz := r.Size()
+				x := sz.Width - border - len(logo)
+				y := sz.Height - border
+				app.PostWait(func() {
+					r.InvalidateClientArea(wm.Rectangle{wm.Position{x, y}, wm.Size{len(logo), 1}})
+				})
+			}
+		}()
 	}
 	b.desktop.Show()
 }

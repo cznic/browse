@@ -30,14 +30,14 @@ type comment struct {
 type file struct {
 	*tk.View
 	browser      *browser
+	commentStyle wm.Style
+	comments     map[int32][]comment // line: comments
 	lnDigits     int
 	lnOffsets    []int
 	lnStyle      wm.Style
 	sf           *gc.SourceFile
 	src          []byte
 	style        wm.Style
-	commentStyle wm.Style
-	comments     map[int32][]comment // line: comments
 }
 
 func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {

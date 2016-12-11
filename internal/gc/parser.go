@@ -62,6 +62,8 @@ func newToken(pos Position, val string) Token {
 	}
 }
 
+func (t Token) String() string { return fmt.Sprintf("%s: %q", t.Position, t.Val) }
+
 type parser struct {
 	c             token.Token
 	l             *Lexer
@@ -151,6 +153,19 @@ func (p *parser) must(tok token.Token) (ok bool) {
 	}
 	p.n()
 	return ok
+}
+
+func (p *parser) mustTok(tok token.Token) (t Token, ok bool) {
+	ok = true
+	if p.c != tok {
+		p.syntaxError(p)
+		p.n()
+		return t, false
+	}
+
+	t = p.tok()
+	p.n()
+	return t, true
 }
 
 func (p *parser) must2(toks ...token.Token) (ok bool) {
@@ -244,12 +259,12 @@ type ImportSpec struct {
 	declaration
 }
 
-func newImportSpec(tok Token, off int32, dot bool, qualifier, importPath string) *ImportSpec {
+func newImportSpec(off int32, dot bool, qualifier, importPath string) *ImportSpec {
 	return &ImportSpec{
 		Dot:         dot,
 		ImportPath:  importPath,
 		Qualifier:   qualifier,
-		declaration: newDeclaration(tok, off),
+		declaration: newDeclaration(Token{}, off),
 	}
 }
 
@@ -259,16 +274,25 @@ func (n *ImportSpec) ImportSpec() *ImportSpec { return n }
 // Kind implements Declaration.
 func (n *ImportSpec) Kind() DeclarationKind { return ImportDeclaration }
 
+// Name implements Declaration.
+func (n *ImportSpec) Name() string {
+	if n.Qualifier != "" {
+		return n.Qualifier
+	}
+
+	return n.Package.Name
+}
+
 // importSpec:
 // 	'.' STRING
 // |	IDENT STRING
 // |	STRING
 func (p *parser) importSpec() {
-	var qualifier string
+	var qualifier Token
 	var dot bool
 	switch p.c {
 	case token.IDENT:
-		qualifier = string(p.l.lit)
+		qualifier = p.tok()
 		p.n()
 	case token.PERIOD:
 		dot = true
@@ -277,19 +301,20 @@ func (p *parser) importSpec() {
 	switch p.c {
 	case token.STRING:
 		ip := p.strLit(string(p.l.lit))
+		if ip == "C" { //TODO
+			p.n()
+			break
+		}
+
 		if !p.sourceFile.Package.ctx.ignoreImports {
-			spec := newImportSpec(p.tok(), p.off, dot, qualifier, ip)
-			spec.Package = p.sourceFile.Package.ctx.load(p.pos(), ip, nil, p.sourceFile.Package.errorList)
+			spec := newImportSpec(p.off, dot, qualifier.Val, ip)
+			spec.Package = p.sourceFile.Package.ctx.load(p.pos(), ip, nil, p.sourceFile.Package.errorList).waitFor()
 			p.sourceFile.ImportSpecs = append(p.sourceFile.ImportSpecs, spec)
 			switch {
 			case dot:
 				//TODO p.todo()
 			default:
-				if qualifier == "" {
-					qualifier = spec.Package.Name
-				}
-
-				if ex, ok := spec.Package.fsNames[qualifier]; ok {
+				if ex, ok := spec.Package.fsNames[spec.Name()]; ok {
 					_ = ex
 					panic(p.pos())
 					//TODO p.todo() // declared in pkg and file scope at the same time.
@@ -1426,9 +1451,6 @@ func (p *parser) fnBody() {
 // |	topLevelDeclList "func" IDENT genericParamsOpt '(' paramTypeListCommaOptOpt ')' result fnBody ';'
 // |	topLevelDeclList commonDecl ';'
 func (p *parser) topLevelDeclList() {
-	for _, v := range p.sourceFile.ImportSpecs {
-		v.Package.waitFor()
-	}
 	for p.c != token.EOF {
 		switch p.c {
 		case token.FUNC:
@@ -1477,7 +1499,27 @@ func (p *parser) file() {
 		p.syntaxError = func(*parser) { p.err(p.pos(), "syntax error") }
 	}
 	p.n()
-	if p.must2(token.PACKAGE, token.IDENT, token.SEMICOLON) && p.sourceFile.build {
+	if !p.must(token.PACKAGE) {
+		return
+	}
+
+	t, ok := p.mustTok(token.IDENT)
+	if !ok {
+		return
+	}
+
+	if p.must(token.SEMICOLON) && p.sourceFile.build {
+		pkg := p.sourceFile.Package
+		switch nm := pkg.Name; {
+		case nm == "":
+			pkg.Name = t.Val
+			pkg.named = t.Position
+		default:
+			if nm != t.Val {
+				//dbg("", t, pkg.Name, pkg.named)
+				//TODO p.todo()
+			}
+		}
 		p.imports()
 		p.topLevelDeclList()
 	}

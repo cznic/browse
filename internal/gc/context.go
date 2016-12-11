@@ -359,6 +359,7 @@ type Package struct {
 	errorList    *errorList
 	fsNames      map[string]Position
 	importedByMu sync.Mutex
+	named        Position
 	ready        chan struct{}
 }
 
