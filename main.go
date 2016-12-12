@@ -37,6 +37,10 @@
 //	Home		sets the view to begin at the first line.
 //	PageDown	scrolls the view to the next page.
 //	PageUp		scrolls the view to the previous page.
+//
+// Mouse initiated actions
+//
+// Lorem ipsum TODO.
 package main
 
 import (

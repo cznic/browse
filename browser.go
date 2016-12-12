@@ -51,8 +51,10 @@ type browser struct {
 	desktop   *wm.Desktop
 	files     map[string]*file
 	logoStyle wm.Style
+	mouseWin  *wm.Window
 	newWinPos wm.Position
 	pkg       *gc.Package
+	root      *wm.Window
 }
 
 func newBrowser(ctx *gc.Context) *browser {
@@ -131,7 +133,7 @@ func (b *browser) onPaintClientArea(w *wm.Window, prev wm.OnPaintHandler, ctx wm
 	sz := w.Size()
 	w.Printf(sz.Width-border-len(logo), sz.Height-border-1, b.logoStyle, logo)
 	if debug {
-		w.Printf(sz.Width-border-len(logo), sz.Height-border, b.logoStyle, "%v", b.desktop.Root().Rendered())
+		w.Printf(sz.Width-border-len(logo), sz.Height-border, b.logoStyle, "%v %p", b.desktop.Root().Rendered(), b.mouseWin)
 	}
 }
 
@@ -139,6 +141,7 @@ func (b *browser) setup() {
 	app.SetDoubleClickDuration(0)
 	app.OnKey(b.onKey, nil)
 	r := b.desktop.Root()
+	b.root = r
 	r.OnPaintClientArea(b.onPaintClientArea, nil)
 	var f *file
 	for _, v := range b.pkg.SourceFiles {

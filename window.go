@@ -31,6 +31,7 @@ type span struct {
 	column int32 // Byte offset.
 	len    int32 // Byte length.
 	kind   int32
+	xref   int32
 }
 
 type file struct {
@@ -87,7 +88,7 @@ scan:
 			position := fi.PositionFor(tok.Pos, false)
 			f.spans[int32(position.Line)] = append(
 				f.spans[int32(position.Line)],
-				span{int32(position.Column) - 1, int32(len(tok.Val)), spanIdent},
+				span{int32(position.Column) - 1, int32(len(tok.Val)), spanIdent, int32(tok.Pos)},
 			)
 		case token.EOF:
 			break scan
@@ -113,10 +114,11 @@ scan:
 	b.files[sf.Path] = f
 	f.OnClose(f.onClose, nil)
 	f.OnKey(f.onKey, nil)
+	f.OnMouseMove(f.onMouseMove, nil)
 	f.OnPaintClientArea(f.onPaint, nil)
 	f.SetCloseButton(true)
-	f.SetTitle(sf.Path)
 	f.SetSize(area.Size)
+	f.SetTitle(sf.Path)
 	return f
 }
 
@@ -124,7 +126,7 @@ func (f *file) commentHandler(position token.Position, lit []byte) {
 	for _, v := range bytes.Split(lit, nl) {
 		f.spans[int32(position.Line)] = append(
 			f.spans[int32(position.Line)],
-			span{int32(position.Column) - 1, int32(len(v)), spanComment},
+			span{int32(position.Column) - 1, int32(len(v)), spanComment, 0},
 		)
 		position.Line++
 		position.Column = 1
@@ -301,4 +303,12 @@ func (f *file) displayString(s []byte) (w int, b []byte) {
 		s = s[n:]
 	}
 	return w, b
+}
+
+func (f *file) onMouseMove(w *wm.Window, prev wm.OnMouseHandler, button tcell.ButtonMask, screenPos, winPos wm.Position, mods tcell.ModMask) bool {
+	if prev != nil && prev(w, nil, button, screenPos, winPos, mods) {
+		return true
+	}
+
+	return false
 }
