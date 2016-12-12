@@ -6,6 +6,7 @@ package gc
 
 import (
 	"fmt"
+	"go/token"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -66,6 +67,7 @@ type model struct {
 
 // Context describes the context of loaded packages.
 type Context struct {
+	fset          *token.FileSet
 	goarch        string
 	goos          string
 	ignoreImports bool // Test hook.
@@ -98,10 +100,11 @@ func NewContext(goos, goarch string, tags, searchPaths []string) (*Context, erro
 	tm[goos] = struct{}{}
 	tm[goarch] = struct{}{}
 	c := &Context{
-		packages:    map[string]*Package{},
+		fset:        token.NewFileSet(),
 		goarch:      goarch,
 		goos:        goos,
 		model:       model,
+		packages:    map[string]*Package{},
 		searchPaths: append([]string(nil), searchPaths...),
 		tags:        tm,
 		universe:    newScope(UniverseScope, nil),
@@ -252,7 +255,7 @@ func (c *Context) filesForImportPath(importPath string) (dir string, sourceFiles
 	return dir, sourceFiles, testFiles, nil
 }
 
-func (c *Context) load(pos Position, importPath string, syntaxError func(*parser), errList *errorList) *Package {
+func (c *Context) load(position token.Position, importPath string, syntaxError func(*parser), errList *errorList) *Package {
 	c.packagesMu.Lock()
 
 	p := c.packages[importPath]
@@ -268,19 +271,19 @@ func (c *Context) load(pos Position, importPath string, syntaxError func(*parser
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				errList.Add(Position{}, fmt.Sprintf("%s\nPANIC: %v", debug.Stack(), err))
+				errList.Add(token.Position{}, fmt.Sprintf("%s\nPANIC: %v", debug.Stack(), err))
 			}
 		}()
 
 		dir, files, _, err := c.filesForImportPath(importPath)
 		if err != nil {
 			close(p.ready)
-			errList.Add(pos, err.Error())
+			errList.Add(position, err.Error())
 			return
 		}
 
 		p.Dir = dir
-		p.load(pos, files, syntaxError)
+		p.load(position, files, syntaxError)
 	}()
 
 	return p
@@ -289,7 +292,7 @@ func (c *Context) load(pos Position, importPath string, syntaxError func(*parser
 // Load finds the package in importPath and returns the resulting Package or an error if any.
 func (c *Context) Load(importPath string) (*Package, error) {
 	err := newErrorList(10)
-	p := c.load(Position{}, importPath, nil, err).waitFor()
+	p := c.load(token.Position{}, importPath, nil, err).waitFor()
 	if err := err.error(); err != nil {
 		return nil, err
 	}
@@ -305,22 +308,33 @@ type SourceFile struct {
 	Scope         *Scope // File scope.
 	TopLevelDecls []Declaration
 	build         bool
-	f             *os.File  // Underlying src file.
+	f             *os.File // Underlying src file.
+	file          *token.File
 	src           mmap.MMap // Valid only during parsing and checking.
 	srcMu         sync.Mutex
 }
 
 func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *SourceFile {
 	var s *Scope
+	var fset *token.FileSet
 	if pkg != nil {
 		s = newScope(FileScope, pkg.Scope)
+		fset = pkg.ctx.fset
+	} else {
+		fset = token.NewFileSet()
 	}
+	var nm string
+	if f != nil {
+		nm = f.Name()
+	}
+	file := fset.AddFile(nm, -1, len(src))
 	return &SourceFile{
 		Package: pkg,
 		Path:    path,
 		Scope:   s,
 		build:   true,
 		f:       f,
+		file:    file,
 		src:     src,
 	}
 }
@@ -348,19 +362,19 @@ func (s *SourceFile) finit() {
 
 // Package describes a package.
 type Package struct {
-	Dir          string
-	ImportPath   string
-	ImportedBy   map[string]struct{} // R/O, key: import path.
-	Imports      map[string]struct{} // R/O, key: import path.
-	Name         string
-	Scope        *Scope // Package scope.
-	SourceFiles  []*SourceFile
-	ctx          *Context
-	errorList    *errorList
-	fsNames      map[string]Position
-	importedByMu sync.Mutex
-	named        Position
-	ready        chan struct{}
+	Dir            string
+	ImportPath     string
+	ImportedBy     map[string]struct{} // R/O, key: import path.
+	Imports        map[string]struct{} // R/O, key: import path.
+	Name           string
+	Scope          *Scope // Package scope.
+	SourceFiles    []*SourceFile
+	ctx            *Context
+	errorList      *errorList
+	fileScopeNames map[string]token.Pos
+	importedByMu   sync.Mutex
+	named          token.Pos
+	ready          chan struct{}
 }
 
 func newPackage(ctx *Context, importPath, nm string, errorList *errorList) *Package {
@@ -369,19 +383,19 @@ func newPackage(ctx *Context, importPath, nm string, errorList *errorList) *Pack
 		s = newScope(PackageScope, ctx.universe)
 	}
 	return &Package{
-		ImportPath: importPath,
-		ImportedBy: map[string]struct{}{},
-		Imports:    map[string]struct{}{},
-		Name:       nm,
-		Scope:      s,
-		ctx:        ctx,
-		errorList:  errorList,
-		fsNames:    map[string]Position{},
-		ready:      make(chan struct{}),
+		ImportPath:     importPath,
+		ImportedBy:     map[string]struct{}{},
+		Imports:        map[string]struct{}{},
+		Name:           nm,
+		Scope:          s,
+		ctx:            ctx,
+		errorList:      errorList,
+		fileScopeNames: map[string]token.Pos{},
+		ready:          make(chan struct{}),
 	}
 }
 
-func (p *Package) load(pos Position, paths []string, syntaxError func(*parser)) {
+func (p *Package) load(position token.Position, paths []string, syntaxError func(*parser)) {
 	defer func() {
 		for _, v := range p.SourceFiles {
 			v.finit()
@@ -389,7 +403,7 @@ func (p *Package) load(pos Position, paths []string, syntaxError func(*parser)) 
 		close(p.ready)
 	}()
 
-	l := NewLexer(nil)
+	l := NewLexer(nil, nil)
 	y := newParser(nil, nil)
 	l.errHandler = y.err
 	l.CommentHandler = y.commentHandler
@@ -398,19 +412,19 @@ func (p *Package) load(pos Position, paths []string, syntaxError func(*parser)) 
 	for _, path := range paths {
 		f, err := os.Open(path)
 		if err != nil {
-			p.errorList.Add(pos, err.Error())
+			p.errorList.Add(position, err.Error())
 			return
 		}
 
 		src, err := mmap.Map(f, 0, 0)
 		if err != nil {
 			f.Close()
-			p.errorList.Add(pos, err.Error())
+			p.errorList.Add(position, err.Error())
 			return
 		}
 
 		sf := newSourceFile(p, path, f, src)
-		l.init(src)
+		l.init(sf.file, src)
 		y.init(sf, l)
 		y.file()
 		switch {

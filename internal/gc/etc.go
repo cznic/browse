@@ -7,6 +7,7 @@ package gc
 import (
 	"bytes"
 	"go/scanner"
+	"go/token"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,7 +26,7 @@ func newErrorList(limit int) *errorList {
 	return &errorList{limit: limit}
 }
 
-func (l *errorList) Add(pos Position, msg string) {
+func (l *errorList) Add(position token.Position, msg string) {
 	l.mu.Lock()
 	if l.limit == 0 {
 		l.mu.Unlock()
@@ -33,7 +34,7 @@ func (l *errorList) Add(pos Position, msg string) {
 	}
 
 	l.limit--
-	l.list.Add(pos.position(), msg)
+	l.list.Add(position, msg)
 	l.mu.Unlock()
 }
 

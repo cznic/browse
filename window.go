@@ -63,9 +63,13 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 		return nil
 	}
 
-	lx := gc.NewLexer(f.src)
-	lx.CommentHandler = f.commentHandler
-	for tok := token.Token(-1); tok != token.EOF; _, _, _, tok = lx.Scan() {
+	fset := token.NewFileSet()
+	fi := fset.AddFile(sf.Path, -1, len(f.src))
+	lx := gc.NewLexer(fi, f.src)
+	lx.CommentHandler = func(off int32, lit []byte) {
+		f.commentHandler(fi.Position(fi.Pos(int(off))), lit)
+	}
+	for tok := token.Token(-1); tok != token.EOF; _, tok = lx.Scan() {
 	}
 	f.View = tk.NewView(f.browser.desktop.Root().NewChild(wm.Rectangle{Position: area.Position}), f)
 	if bytes.HasSuffix(f.src, nl) {
@@ -94,11 +98,11 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 	return f
 }
 
-func (f *file) commentHandler(pos gc.Position, lit []byte) {
+func (f *file) commentHandler(position token.Position, lit []byte) {
 	for _, v := range bytes.Split(lit, nl) {
-		f.comments[pos.Line] = append(f.comments[pos.Line], comment{pos.Column - 1, int32(len(v))})
-		pos.Line++
-		pos.Column = 1
+		f.comments[int32(position.Line)] = append(f.comments[int32(position.Line)], comment{int32(position.Column) - 1, int32(len(v))})
+		position.Line++
+		position.Column = 1
 	}
 }
 

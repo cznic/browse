@@ -18,51 +18,21 @@ var (
 
 // Node is implemented by all AST nodes.
 type Node interface {
-	Pos() Position
+	Pos() token.Pos
 }
-
-// Position records File:Line:Column information.
-type Position struct {
-	File   *string
-	Line   int32
-	Column int32
-}
-
-// Pos implements Node.
-func (p Position) Pos() Position { return p }
-
-func newPosition(file *string, line, column int32) Position {
-	return Position{file, line, column}
-}
-
-func (p Position) Filename() string {
-	if p.File != nil {
-		return *p.File
-	}
-
-	return ""
-}
-
-func (p Position) position() token.Position {
-	return token.Position{Filename: p.Filename(), Line: int(p.Line), Column: int(p.Column)}
-}
-
-func (p Position) String() string { return p.position().String() }
 
 // Token represents the position and value of a lexeme.
 type Token struct {
-	Position
+	Pos token.Pos
 	Val string
 }
 
-func newToken(pos Position, val string) Token {
+func newToken(pos token.Pos, val string) Token {
 	return Token{
-		Position: pos,
-		Val:      val,
+		Pos: pos,
+		Val: val,
 	}
 }
-
-func (t Token) String() string { return fmt.Sprintf("%s: %q", t.Position, t.Val) }
 
 type parser struct {
 	c             token.Token
@@ -72,9 +42,7 @@ type parser struct {
 	sourceFile    *SourceFile
 	syntaxError   func(*parser)
 
-	column int32
-	line   int32
-	off    int32
+	off int32
 
 	ignoreRedeclarations bool
 	loophack             bool
@@ -95,13 +63,13 @@ func (p *parser) init(src *SourceFile, l *Lexer) {
 	p.ignoreRedeclarations = true
 }
 
-func (p *parser) err(pos Position, msg string, args ...interface{}) {
-	p.sourceFile.Package.errorList.Add(pos, fmt.Sprintf(msg, args...))
+func (p *parser) err(position token.Position, msg string, args ...interface{}) {
+	p.sourceFile.Package.errorList.Add(position, fmt.Sprintf(msg, args...))
 }
 
 func (p *parser) n() token.Token {
 more:
-	switch p.off, p.line, p.column, p.c = p.l.Scan(); p.c {
+	switch p.off, p.c = p.l.Scan(); p.c {
 	case token.FOR, token.IF, token.SELECT, token.SWITCH:
 		p.loophack = true
 	case token.LPAREN, token.LBRACK:
@@ -125,9 +93,7 @@ more:
 	return p.c
 }
 
-func (p *parser) tok() Token {
-	return newToken(newPosition(&p.sourceFile.Path, p.line, p.column), string(p.l.lit))
-}
+func (p *parser) tok() Token { return newToken(p.l.pos(p.off), string(p.l.lit)) }
 
 func (p *parser) opt(tok token.Token) bool {
 	if p.c == tok {
@@ -188,12 +154,13 @@ func (p *parser) not2(toks ...token.Token) bool {
 	return true
 }
 
-func (p *parser) pos() Position { return newPosition(&p.sourceFile.Path, p.line, p.column) }
+func (p *parser) pos() token.Pos           { return p.l.file.Pos(int(p.off)) }
+func (p *parser) position() token.Position { return p.l.file.Position(p.pos()) }
 
 func (p *parser) strLit(s string) string {
 	value, err := strconv.Unquote(s)
 	if err != nil {
-		p.err(p.pos(), "%s: %q", err, s)
+		p.err(p.position(), "%s: %q", err, s)
 		return ""
 	}
 
@@ -204,7 +171,7 @@ func (p *parser) strLit(s string) string {
 	return value
 }
 
-func (p *parser) commentHandler(_ Position, lit []byte) {
+func (p *parser) commentHandler(_ int32, lit []byte) {
 	if p.sourceFile.build && bytes.HasPrefix(lit, buildMark) {
 		p.buildDirective(lit)
 	}
@@ -275,12 +242,12 @@ type ImportSpec struct {
 	declaration
 }
 
-func newImportSpec(off int32, dot bool, qualifier, importPath string) *ImportSpec {
+func newImportSpec(tok Token, off int32, dot bool, qualifier, importPath string) *ImportSpec {
 	return &ImportSpec{
 		Dot:         dot,
 		ImportPath:  importPath,
 		Qualifier:   qualifier,
-		declaration: newDeclaration(Token{}, off),
+		declaration: declaration{tok},
 	}
 }
 
@@ -304,11 +271,12 @@ func (n *ImportSpec) Name() string {
 // |	IDENT STRING
 // |	STRING
 func (p *parser) importSpec() {
-	var qualifier Token
+	var decl, qualifier Token
 	var dot bool
 	switch p.c {
 	case token.IDENT:
 		qualifier = p.tok()
+		decl = qualifier
 		p.n()
 	case token.PERIOD:
 		dot = true
@@ -316,6 +284,9 @@ func (p *parser) importSpec() {
 	}
 	switch p.c {
 	case token.STRING:
+		if decl.Val == "" {
+			decl = p.tok()
+		}
 		ip := p.strLit(string(p.l.lit))
 		if ip == "C" { //TODO
 			p.n()
@@ -323,14 +294,14 @@ func (p *parser) importSpec() {
 		}
 
 		if !p.sourceFile.Package.ctx.ignoreImports {
-			spec := newImportSpec(p.off, dot, qualifier.Val, ip)
-			spec.Package = p.sourceFile.Package.ctx.load(p.pos(), ip, nil, p.sourceFile.Package.errorList).waitFor()
+			spec := newImportSpec(decl, p.off, dot, qualifier.Val, ip)
+			spec.Package = p.sourceFile.Package.ctx.load(p.position(), ip, nil, p.sourceFile.Package.errorList).waitFor()
 			p.sourceFile.ImportSpecs = append(p.sourceFile.ImportSpecs, spec)
 			switch {
 			case dot:
 				//TODO p.todo()
 			default:
-				if ex, ok := spec.Package.fsNames[spec.Name()]; ok {
+				if ex, ok := spec.Package.fileScopeNames[spec.Name()]; ok {
 					_ = ex
 					panic(p.pos())
 					//TODO p.todo() // declared in pkg and file scope at the same time.
@@ -1540,7 +1511,7 @@ func (p *parser) topLevelDeclList() {
 // 	"package" IDENT ';' imports topLevelDeclList
 func (p *parser) file() {
 	if p.syntaxError == nil {
-		p.syntaxError = func(*parser) { p.err(p.pos(), "syntax error") }
+		p.syntaxError = func(*parser) { p.err(p.position(), "syntax error") }
 	}
 	p.n()
 	if !p.must(token.PACKAGE) {
@@ -1557,7 +1528,7 @@ func (p *parser) file() {
 		switch nm := pkg.Name; {
 		case nm == "":
 			pkg.Name = t.Val
-			pkg.named = t.Position
+			pkg.named = t.Pos
 		default:
 			if nm != t.Val {
 				//dbg("", t, pkg.Name, pkg.named)

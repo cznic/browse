@@ -4,6 +4,10 @@
 
 package gc
 
+import (
+	"go/token"
+)
+
 var (
 	_ Declaration = (*ConstDecl)(nil)
 	_ Declaration = (*FuncDecl)(nil)
@@ -38,18 +42,13 @@ func (b *Bindings) declare(p *parser, d Declaration) {
 		return
 	}
 
-	p.err(d.Pos(), "%v redeclared in this block\n\tprevious declaration at %v", d.Name(), ex.Pos())
+	p.err(p.l.file.Position(d.Pos()), "%v redeclared in this block\n\tprevious declaration at %v", d.Name(), ex.Pos())
 }
 
 // ---------------------------------------------------------------- declaration
 
 type declaration struct {
 	Token
-	off int32
-}
-
-func newDeclaration(tok Token, off int32) declaration {
-	return declaration{tok, off}
 }
 
 // Const implements Declaration.
@@ -67,8 +66,8 @@ func (d *declaration) Method() *MethodDecl { panic("Method of inappropriate Decl
 // Name implements Declaration.
 func (d *declaration) Name() string { return d.Val }
 
-// offset implements Declaration.
-func (d *declaration) offset() int { return int(d.off) }
+// Pos implements Declaration.
+func (d *declaration) Pos() token.Pos { return d.Token.Pos }
 
 // Type implements Declaration.
 func (d *declaration) Type() *TypeDecl { panic("Type of inappropriate Declaration") }
@@ -110,7 +109,7 @@ func (s *Scope) declare(p *parser, d Declaration) {
 		}
 
 		pkg := p.sourceFile.Package
-		switch ex, ok := pkg.fsNames[nm]; {
+		switch ex, ok := pkg.fileScopeNames[nm]; {
 		case ok:
 			_ = ex
 			panic(p.pos())
@@ -130,7 +129,7 @@ type ConstDecl struct {
 
 func newConstDecl(tok Token, off int32) *ConstDecl {
 	return &ConstDecl{
-		declaration: newDeclaration(tok, off),
+		declaration: declaration{tok},
 	}
 }
 
@@ -147,7 +146,7 @@ type FuncDecl struct {
 
 func newFuncDecl(tok Token, off int32) *FuncDecl {
 	return &FuncDecl{
-		declaration: newDeclaration(tok, off),
+		declaration: declaration{tok},
 	}
 }
 
@@ -164,7 +163,7 @@ type MethodDecl struct {
 
 func newMethodDecl(tok Token, off int32) *MethodDecl {
 	return &MethodDecl{
-		declaration: newDeclaration(tok, off),
+		declaration: declaration{tok},
 	}
 }
 
@@ -181,7 +180,7 @@ type TypeDecl struct {
 
 func newTypeDecl(tok Token, off int32) *TypeDecl {
 	return &TypeDecl{
-		declaration: newDeclaration(tok, off),
+		declaration: declaration{tok},
 	}
 }
 
@@ -198,7 +197,7 @@ type VarDecl struct {
 
 func newVarDecl(tok Token, off int32) *VarDecl {
 	return &VarDecl{
-		declaration: newDeclaration(tok, off),
+		declaration: declaration{tok},
 	}
 }
 
@@ -242,7 +241,4 @@ type Declaration interface {
 	// Var returns the Declaration's  *VarDecl. It panics if Kind is not
 	// VarDeclaration.
 	Var() *VarDecl
-
-	// offset returns the Delcaration's offset within its SourceFile.
-	offset() int // Position in source file.
 }
