@@ -22,20 +22,27 @@ import (
 
 var nl = []byte{'\n'}
 
-type comment struct {
-	column int32
-	len    int32
+const (
+	spanComment = iota
+	spanIdent
+)
+
+type span struct {
+	column int32 // Byte offset.
+	len    int32 // Byte length.
+	kind   int32
 }
 
 type file struct {
 	*tk.View
 	browser      *browser
 	commentStyle wm.Style
-	comments     map[int32][]comment // line: comments
+	identStyle   wm.Style
 	lnDigits     int
 	lnOffsets    []int
 	lnStyle      wm.Style
 	sf           *gc.SourceFile
+	spans        map[int32][]span // line: []span
 	src          []byte
 	style        wm.Style
 }
@@ -48,12 +55,15 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 		commentColor = tcell.ColorGreen
 	}
 	style := app.ChildWindowStyle().ClientArea
+	identStyle := style
+	identStyle.Attr = tcell.AttrUnderline
 	f := &file{
 		browser:      b,
 		commentStyle: wm.Style{Foreground: commentColor, Background: style.Background},
-		comments:     map[int32][]comment{},
+		identStyle:   identStyle,
 		lnStyle:      wm.Style{Foreground: color, Background: style.Background},
 		sf:           sf,
+		spans:        map[int32][]span{},
 		style:        style,
 	}
 
@@ -69,7 +79,19 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 	lx.CommentHandler = func(off int32, lit []byte) {
 		f.commentHandler(fi.Position(fi.Pos(int(off))), lit)
 	}
-	for tok := token.Token(-1); tok != token.EOF; _, tok = lx.Scan() {
+scan:
+	for {
+		switch off, t := lx.Scan(); t {
+		case token.IDENT:
+			tok := lx.Token(off)
+			position := fi.PositionFor(tok.Pos, false)
+			f.spans[int32(position.Line)] = append(
+				f.spans[int32(position.Line)],
+				span{int32(position.Column) - 1, int32(len(tok.Val)), spanIdent},
+			)
+		case token.EOF:
+			break scan
+		}
 	}
 	f.View = tk.NewView(f.browser.desktop.Root().NewChild(wm.Rectangle{Position: area.Position}), f)
 	if bytes.HasSuffix(f.src, nl) {
@@ -100,7 +122,10 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 
 func (f *file) commentHandler(position token.Position, lit []byte) {
 	for _, v := range bytes.Split(lit, nl) {
-		f.comments[int32(position.Line)] = append(f.comments[int32(position.Line)], comment{int32(position.Column) - 1, int32(len(v))})
+		f.spans[int32(position.Line)] = append(
+			f.spans[int32(position.Line)],
+			span{int32(position.Column) - 1, int32(len(v)), spanComment},
+		)
 		position.Line++
 		position.Column = 1
 	}
@@ -196,24 +221,30 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 
 		f.Printf(0, line, f.lnStyle, "%*d", f.lnDigits, line+1)
 		src := f.src[f.lnOffsets[line]:f.lnOffsets[line+1]]
-		x := 0
-		for _, v := range f.comments[int32(line+1)] {
-			pre := src[:v.column]
-			src = src[v.column:]
-			w, s := f.displayString(pre)
-			f.Printf(f.lnDigits+1+x, line, f.style, "%s", s)
-			x += w
-			comment := src[:v.len]
-			src = src[v.len:]
-			w, s = f.displayString(comment)
-			f.Printf(f.lnDigits+1+x, line, f.commentStyle, "%s", s)
-			x += w
+		var col, off int
+		for _, v := range f.spans[int32(line+1)] {
+			span := src[off:v.column]
+			off = int(v.column)
+			col += f.paintSpan(col, line, f.style, span)
+			span = src[v.column : v.column+v.len]
+			off += int(v.len)
+			switch v.kind {
+			case spanComment:
+				col += f.paintSpan(col, line, f.commentStyle, span)
+			case spanIdent:
+				col += f.paintSpan(col, line, f.style, span) //TODO style
+			default:
+				panic("internal error")
+			}
 		}
-		if len(src) != 0 {
-			_, s := f.displayString(src)
-			f.Printf(f.lnDigits+1+x, line, f.style, "%s", s)
-		}
+		f.paintSpan(col, line, f.style, src[off:])
 	}
+}
+
+func (f *file) paintSpan(x, y int, style wm.Style, s []byte) int {
+	w, s := f.displayString(s)
+	f.Printf(f.lnDigits+1+x, y, style, "%s", s)
+	return w
 }
 
 func (f *file) displayWidth(s []byte) (w int) {

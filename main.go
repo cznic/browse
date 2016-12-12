@@ -99,6 +99,8 @@ outer:
 		env("GOARCH", runtime.GOARCH),
 		gc.VersionTags(),
 		searchPaths,
+		gc.DeclarationXref(),
+		gc.IgnoreRedeclarations(),
 	)
 	if err != nil {
 		log.Fatal(err)

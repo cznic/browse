@@ -119,6 +119,10 @@ func (l *Lexer) pos(off int32) token.Pos { return l.file.Pos(int(off)) }
 
 func (l *Lexer) position(off int32) token.Position { return l.file.Position(l.pos(off)) }
 
+// Returns the last scanned Token. 'off' must be the offset returned from last
+// call to Scan().
+func (l *Lexer) Token(off int32) Token { return newToken(l.pos(off), string(l.lit)) }
+
 // Returns class.
 func (l *Lexer) n() byte { // n == next
 	if l.off == int32(len(l.src)) {

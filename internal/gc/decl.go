@@ -49,6 +49,7 @@ func (b *Bindings) declare(p *parser, d Declaration) {
 
 type declaration struct {
 	Token
+	visibility token.Pos
 }
 
 // Const implements Declaration.
@@ -74,6 +75,9 @@ func (d *declaration) Type() *TypeDecl { panic("Type of inappropriate Declaratio
 
 // Var implements Declaration.
 func (d *declaration) Var() *VarDecl { panic("Var of inappropriate Declaration") }
+
+// Visibility implements Declaration.
+func (d *declaration) Visibility() token.Pos { return d.visibility }
 
 // ---------------------------------------------------------------------- Scope
 
@@ -127,9 +131,9 @@ type ConstDecl struct {
 	declaration
 }
 
-func newConstDecl(tok Token, off int32) *ConstDecl {
+func newConstDecl(tok Token, visibility token.Pos) *ConstDecl {
 	return &ConstDecl{
-		declaration: declaration{tok},
+		declaration: declaration{tok, visibility},
 	}
 }
 
@@ -144,9 +148,9 @@ type FuncDecl struct {
 	declaration
 }
 
-func newFuncDecl(tok Token, off int32) *FuncDecl {
+func newFuncDecl(tok Token, visibility token.Pos) *FuncDecl {
 	return &FuncDecl{
-		declaration: declaration{tok},
+		declaration: declaration{tok, visibility},
 	}
 }
 
@@ -161,9 +165,9 @@ type MethodDecl struct {
 	declaration
 }
 
-func newMethodDecl(tok Token, off int32) *MethodDecl {
+func newMethodDecl(tok Token, visibility token.Pos) *MethodDecl {
 	return &MethodDecl{
-		declaration: declaration{tok},
+		declaration: declaration{tok, visibility},
 	}
 }
 
@@ -178,9 +182,9 @@ type TypeDecl struct {
 	declaration
 }
 
-func newTypeDecl(tok Token, off int32) *TypeDecl {
+func newTypeDecl(tok Token, visibility token.Pos) *TypeDecl {
 	return &TypeDecl{
-		declaration: declaration{tok},
+		declaration: declaration{tok, visibility},
 	}
 }
 
@@ -195,9 +199,9 @@ type VarDecl struct {
 	declaration
 }
 
-func newVarDecl(tok Token, off int32) *VarDecl {
+func newVarDecl(tok Token, visibility token.Pos) *VarDecl {
 	return &VarDecl{
-		declaration: declaration{tok},
+		declaration: declaration{tok, visibility},
 	}
 }
 
@@ -241,4 +245,9 @@ type Declaration interface {
 	// Var returns the Declaration's  *VarDecl. It panics if Kind is not
 	// VarDeclaration.
 	Var() *VarDecl
+
+	// Visibility returns the position at which the declaration is visible
+	// in its declaration scope or token.NoPos for declarations in package
+	// and file scope.
+	Visibility() token.Pos
 }

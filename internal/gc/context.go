@@ -65,6 +65,30 @@ type model struct {
 	ptrBytes int // Size of *T, unsafe.Pointer and uintptr.
 }
 
+type tweaks struct {
+	declarationXref      bool
+	ignoreRedeclarations bool
+}
+
+// Option amends Context.
+type Option func(c *Context) error
+
+// DeclarationXref enables keeping a declaratio cross reference.
+func DeclarationXref() Option {
+	return func(c *Context) error {
+		c.tweaks.declarationXref = true
+		return nil
+	}
+}
+
+// IgnoreRedeclatations disables reporting redeclaration errors.
+func IgnoreRedeclarations() Option {
+	return func(c *Context) error {
+		c.tweaks.ignoreRedeclarations = true
+		return nil
+	}
+}
+
 // Context describes the context of loaded packages.
 type Context struct {
 	fset          *token.FileSet
@@ -76,6 +100,7 @@ type Context struct {
 	packagesMu    sync.Mutex
 	searchPaths   []string
 	tags          map[string]struct{}
+	tweaks        tweaks
 	universe      *Scope
 }
 
@@ -83,7 +108,7 @@ type Context struct {
 // considered when loading packages having build directives (see
 // https://golang.org/pkg/go/build/#hdr-Build_Constraints for details).
 // searchPaths are examined when looking for a package to load.
-func NewContext(goos, goarch string, tags, searchPaths []string) (*Context, error) {
+func NewContext(goos, goarch string, tags, searchPaths []string, options ...Option) (*Context, error) {
 	if !validOS[goos] {
 		return nil, fmt.Errorf("unknown operating system: %s", goos)
 	}
@@ -108,6 +133,11 @@ func NewContext(goos, goarch string, tags, searchPaths []string) (*Context, erro
 		searchPaths: append([]string(nil), searchPaths...),
 		tags:        tm,
 		universe:    newScope(UniverseScope, nil),
+	}
+	for _, o := range options {
+		if err := o(c); err != nil {
+			return nil, err
+		}
 	}
 	return c, nil
 }
@@ -307,19 +337,29 @@ type SourceFile struct {
 	Path          string
 	Scope         *Scope // File scope.
 	TopLevelDecls []Declaration
+	Xref          map[token.Pos]Declaration // Enabled by DeclarationXref.
 	build         bool
 	f             *os.File // Underlying src file.
 	file          *token.File
 	src           mmap.MMap // Valid only during parsing and checking.
 	srcMu         sync.Mutex
+	xref          map[Token]*Scope // Token: Resolution scope.
 }
 
 func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *SourceFile {
-	var s *Scope
-	var fset *token.FileSet
+	var (
+		s     *Scope
+		fset  *token.FileSet
+		xref0 map[Token]*Scope
+		xref  map[token.Pos]Declaration
+	)
 	if pkg != nil {
 		s = newScope(FileScope, pkg.Scope)
 		fset = pkg.ctx.fset
+		if pkg.ctx.tweaks.declarationXref {
+			xref0 = map[Token]*Scope{}
+			xref = map[token.Pos]Declaration{}
+		}
 	} else {
 		fset = token.NewFileSet()
 	}
@@ -336,6 +376,8 @@ func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *Source
 		f:       f,
 		file:    file,
 		src:     src,
+		xref:    xref0,
+		Xref:    xref,
 	}
 }
 
@@ -345,6 +387,12 @@ func (s *SourceFile) init(pkg *Package, path string) {
 	s.TopLevelDecls = s.TopLevelDecls[:0]
 	s.Path = path
 	s.build = true
+	s.xref = nil
+	s.Xref = nil
+	if pkg != nil && pkg.ctx.tweaks.declarationXref {
+		s.xref = map[Token]*Scope{}
+		s.Xref = map[token.Pos]Declaration{}
+	}
 }
 
 func (s *SourceFile) finit() {
@@ -405,6 +453,7 @@ func (p *Package) load(position token.Position, paths []string, syntaxError func
 
 	l := NewLexer(nil, nil)
 	y := newParser(nil, nil)
+	y.ignoreRedeclarations = p.ctx.tweaks.ignoreRedeclarations
 	l.errHandler = y.err
 	l.CommentHandler = y.commentHandler
 	y.syntaxError = syntaxError

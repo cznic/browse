@@ -60,7 +60,6 @@ func (p *parser) init(src *SourceFile, l *Lexer) {
 	p.loophack = false
 	p.loophackStack = p.loophackStack[:0]
 	p.sourceFile = src
-	p.ignoreRedeclarations = true
 }
 
 func (p *parser) err(position token.Position, msg string, args ...interface{}) {
@@ -93,7 +92,7 @@ more:
 	return p.c
 }
 
-func (p *parser) tok() Token { return newToken(p.l.pos(p.off), string(p.l.lit)) }
+func (p *parser) tok() Token { return p.l.Token(p.off) }
 
 func (p *parser) opt(tok token.Token) bool {
 	if p.c == tok {
@@ -233,6 +232,21 @@ func (p *parser) pop() {
 	p.scope = p.scope.Parent
 }
 
+func (p *parser) lookup(s *Scope, nm Token) Declaration {
+	for s0 := s; s != nil; s = s.Parent {
+		if d, ok := s.Bindings[nm.Val]; ok && (s.Kind != BlockScope || s != s0 || d.Pos() < nm.Pos) {
+			return d
+		}
+
+		if s.Kind == PackageScope {
+			if d, ok := p.sourceFile.Scope.Bindings[nm.Val]; ok {
+				return d
+			}
+		}
+	}
+	return nil
+}
+
 // ImportSpec is an import declaration.
 type ImportSpec struct {
 	Dot        bool     // The `import . "foo/bar"` variant is used.
@@ -247,7 +261,7 @@ func newImportSpec(tok Token, off int32, dot bool, qualifier, importPath string)
 		Dot:         dot,
 		ImportPath:  importPath,
 		Qualifier:   qualifier,
-		declaration: declaration{tok},
+		declaration: declaration{tok, token.NoPos},
 	}
 }
 
@@ -350,17 +364,15 @@ func (p *parser) imports() {
 // identList:
 // 	IDENT
 // |	identList ',' IDENT
-func (p *parser) identList() (l []Token, o []int32) {
+func (p *parser) identList() (l []Token) {
 	switch p.c {
 	case token.IDENT:
 		l = []Token{p.tok()}
-		o = []int32{p.off}
 		p.n()
 		for p.opt(token.COMMA) && p.c != tokenGTGT {
 			switch p.c {
 			case token.IDENT:
 				l = append(l, p.tok())
-				o = append(o, p.off)
 				p.n()
 			default:
 				p.syntaxError(p)
@@ -369,7 +381,7 @@ func (p *parser) identList() (l []Token, o []int32) {
 	default:
 		p.syntaxError(p)
 	}
-	return l, o
+	return l
 }
 
 // compLitExpr:
@@ -513,10 +525,15 @@ func (p *parser) primaryExpr() (isLabel bool) {
 		p.exprOrType()
 		p.must(token.RPAREN)
 	case token.IDENT:
+		tok := p.tok()
 		p.n()
 		p.genericArgsOpt()
 		if p.c == token.COLON {
 			return true
+		}
+
+		if x := p.sourceFile.xref; x != nil {
+			x[tok] = p.scope
 		}
 	case token.FUNC:
 		p.fnType()
@@ -699,16 +716,20 @@ func (p *parser) exprList() {
 // |	identList typ
 // |	identList typ '=' exprList
 func (p *parser) constSpec() {
-	l, o := p.identList()
-	for i, v := range l {
-		p.scope.declare(p, newConstDecl(v, o[i]))
-	}
+	l := p.identList()
 	switch p.c {
 	case token.RPAREN, token.SEMICOLON:
 		return
 	case token.ASSIGN:
 		p.n()
 		p.exprList()
+		pos := token.NoPos
+		if p.scope.Kind != PackageScope {
+			pos = p.pos()
+		}
+		for _, v := range l {
+			p.scope.declare(p, newConstDecl(v, pos))
+		}
 		return
 	}
 
@@ -719,6 +740,13 @@ func (p *parser) constSpec() {
 	if p.not2(token.SEMICOLON, token.RPAREN) {
 		p.syntaxError(p)
 		p.skip(token.SEMICOLON, token.RPAREN)
+	}
+	pos := token.NoPos
+	if p.scope.Kind != PackageScope {
+		pos = p.pos()
+	}
+	for _, v := range l {
+		p.scope.declare(p, newConstDecl(v, pos))
 	}
 }
 
@@ -1540,5 +1568,12 @@ func (p *parser) file() {
 		if p.scope != nil && p.scope.Kind != PackageScope {
 			panic("internal error")
 		}
+		xref := p.sourceFile.Xref
+		for tok, scope := range p.sourceFile.xref {
+			if d := p.lookup(scope, tok); d != nil {
+				xref[tok.Pos] = d
+			}
+		}
+		p.sourceFile.xref = nil
 	}
 }
