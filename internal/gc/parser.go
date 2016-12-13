@@ -717,8 +717,8 @@ func (p *parser) exprList() {
 // |	identList typ '=' exprList
 func (p *parser) constSpec() {
 	l := p.identList()
-	switch p.c {
-	case token.RPAREN, token.SEMICOLON:
+
+	defer func() {
 		pos := token.NoPos
 		if p.scope.Kind != PackageScope {
 			pos = p.pos()
@@ -726,17 +726,14 @@ func (p *parser) constSpec() {
 		for _, v := range l {
 			p.scope.declare(p, newConstDecl(v, pos))
 		}
+	}()
+
+	switch p.c {
+	case token.RPAREN, token.SEMICOLON:
 		return
 	case token.ASSIGN:
 		p.n()
 		p.exprList()
-		pos := token.NoPos
-		if p.scope.Kind != PackageScope {
-			pos = p.pos()
-		}
-		for _, v := range l {
-			p.scope.declare(p, newConstDecl(v, pos))
-		}
 		return
 	}
 
@@ -747,13 +744,6 @@ func (p *parser) constSpec() {
 	if p.not2(token.SEMICOLON, token.RPAREN) {
 		p.syntaxError(p)
 		p.skip(token.SEMICOLON, token.RPAREN)
-	}
-	pos := token.NoPos
-	if p.scope.Kind != PackageScope {
-		pos = p.pos()
-	}
-	for _, v := range l {
-		p.scope.declare(p, newConstDecl(v, pos))
 	}
 }
 
