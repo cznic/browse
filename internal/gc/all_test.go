@@ -274,7 +274,7 @@ var (
 				return err
 			}
 
-			ctx := &Context{fset: token.NewFileSet()}
+			ctx := &Context{FileSet: token.NewFileSet()}
 			pkg := newPackage(ctx, p.ImportPath, p.Name, nil)
 			for _, v := range p.GoFiles {
 				path := filepath.Join(p.Dir, v)

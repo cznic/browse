@@ -115,6 +115,17 @@ outer:
 		log.Fatal(err)
 	}
 
+	//TODO- if debug {
+	//TODO- 	fs := ctx.FileSet
+	//TODO- 	var el scanner.ErrorList
+	//TODO- 	for k, v := range pkg.SourceFiles[3].Xref {
+	//TODO- 		el.Add(fs.Position(k), fmt.Sprintf("%s: %q", fs.Position(v.Pos()), v.Name()))
+	//TODO- 	}
+	//TODO- 	el.Sort()
+	//TODO- 	for _, v := range el {
+	//TODO- 		log.Println(v.Error())
+	//TODO- 	}
+	//TODO- }
 	if err := newBrowser(ctx).run(pkg); err != nil {
 		log.Fatal(err)
 	}

@@ -91,7 +91,7 @@ func IgnoreRedeclarations() Option {
 
 // Context describes the context of loaded packages.
 type Context struct {
-	fset          *token.FileSet
+	FileSet       *token.FileSet // Contains all loaded files.
 	goarch        string
 	goos          string
 	ignoreImports bool // Test hook.
@@ -125,7 +125,7 @@ func NewContext(goos, goarch string, tags, searchPaths []string, options ...Opti
 	tm[goos] = struct{}{}
 	tm[goarch] = struct{}{}
 	c := &Context{
-		fset:        token.NewFileSet(),
+		FileSet:     token.NewFileSet(),
 		goarch:      goarch,
 		goos:        goos,
 		model:       model,
@@ -332,6 +332,7 @@ func (c *Context) Load(importPath string) (*Package, error) {
 
 // SourceFile describes a source file.
 type SourceFile struct {
+	File          *token.File
 	ImportSpecs   []*ImportSpec
 	Package       *Package
 	Path          string
@@ -339,8 +340,7 @@ type SourceFile struct {
 	TopLevelDecls []Declaration
 	Xref          map[token.Pos]Declaration // Enabled by DeclarationXref.
 	build         bool
-	f             *os.File // Underlying src file.
-	file          *token.File
+	f             *os.File  // Underlying src file.
 	src           mmap.MMap // Valid only during parsing and checking.
 	srcMu         sync.Mutex
 	xref          map[Token]*Scope // Token: Resolution scope.
@@ -355,7 +355,7 @@ func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *Source
 	)
 	if pkg != nil {
 		s = newScope(FileScope, pkg.Scope)
-		fset = pkg.ctx.fset
+		fset = pkg.ctx.FileSet
 		if pkg.ctx.tweaks.declarationXref {
 			xref0 = map[Token]*Scope{}
 			xref = map[token.Pos]Declaration{}
@@ -369,15 +369,15 @@ func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *Source
 	}
 	file := fset.AddFile(nm, -1, len(src))
 	return &SourceFile{
+		File:    file,
 		Package: pkg,
 		Path:    path,
 		Scope:   s,
+		Xref:    xref,
 		build:   true,
 		f:       f,
-		file:    file,
 		src:     src,
 		xref:    xref0,
-		Xref:    xref,
 	}
 }
 
@@ -473,7 +473,7 @@ func (p *Package) load(position token.Position, paths []string, syntaxError func
 		}
 
 		sf := newSourceFile(p, path, f, src)
-		l.init(sf.file, src)
+		l.init(sf.File, src)
 		y.init(sf, l)
 		y.file()
 		switch {

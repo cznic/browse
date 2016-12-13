@@ -719,6 +719,13 @@ func (p *parser) constSpec() {
 	l := p.identList()
 	switch p.c {
 	case token.RPAREN, token.SEMICOLON:
+		pos := token.NoPos
+		if p.scope.Kind != PackageScope {
+			pos = p.pos()
+		}
+		for _, v := range l {
+			p.scope.declare(p, newConstDecl(v, pos))
+		}
 		return
 	case token.ASSIGN:
 		p.n()

@@ -38,6 +38,7 @@ type file struct {
 	*tk.View
 	browser      *browser
 	commentStyle wm.Style
+	howerPos     wm.Position
 	identStyle   wm.Style
 	lnDigits     int
 	lnOffsets    []int
@@ -46,6 +47,8 @@ type file struct {
 	spans        map[int32][]span // line: []span
 	src          []byte
 	style        wm.Style
+	target       token.Pos // "url" in bottom border.
+	targetStyle  wm.Style
 }
 
 func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
@@ -66,6 +69,7 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 		sf:           sf,
 		spans:        map[int32][]span{},
 		style:        style,
+		targetStyle:  b.theme.ChildWindow.Border,
 	}
 
 	var err error
@@ -80,15 +84,17 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 	lx.CommentHandler = func(off int32, lit []byte) {
 		f.commentHandler(fi.Position(fi.Pos(int(off))), lit)
 	}
+	sfi := f.sf.File
 scan:
 	for {
 		switch off, t := lx.Scan(); t {
 		case token.IDENT:
 			tok := lx.Token(off)
 			position := fi.PositionFor(tok.Pos, false)
+			pos := sfi.Pos(position.Offset)
 			f.spans[int32(position.Line)] = append(
 				f.spans[int32(position.Line)],
-				span{int32(position.Column) - 1, int32(len(tok.Val)), spanIdent, int32(tok.Pos)},
+				span{int32(position.Column) - 1, int32(len(tok.Val)), spanIdent, int32(pos)},
 			)
 		case token.EOF:
 			break scan
@@ -115,6 +121,7 @@ scan:
 	f.OnClose(f.onClose, nil)
 	f.OnKey(f.onKey, nil)
 	f.OnMouseMove(f.onMouseMove, nil)
+	f.OnPaintBorderBottom(f.onPaintBorderBottom, nil)
 	f.OnPaintClientArea(f.onPaint, nil)
 	f.SetCloseButton(true)
 	f.SetSize(area.Size)
@@ -203,7 +210,7 @@ func (f *file) Metrics(viewport wm.Rectangle) wm.Size {
 			break
 		}
 
-		dw := f.displayWidth(f.src[f.lnOffsets[line]:f.lnOffsets[line+1]])
+		dw := f.displayWidth(0, f.src[f.lnOffsets[line]:f.lnOffsets[line+1]])
 		w = mathutil.Max(w, f.lnDigits+dw)
 	}
 	return wm.Size{Width: w, Height: len(f.lnOffsets) - 1}
@@ -215,6 +222,7 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 	}
 
 	cpY := f.ClientPosition().Y
+	f.setTarget(token.NoPos)
 	for i := 0; i < ctx.Height; i++ {
 		line := ctx.Y - cpY + i
 		if line < 0 || line >= len(f.lnOffsets)-1 {
@@ -224,6 +232,7 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 		f.Printf(0, line, f.lnStyle, "%*d", f.lnDigits, line+1)
 		src := f.src[f.lnOffsets[line]:f.lnOffsets[line+1]]
 		var col, off int
+		hp := f.howerPos
 		for _, v := range f.spans[int32(line+1)] {
 			span := src[off:v.column]
 			off = int(v.column)
@@ -234,7 +243,22 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 			case spanComment:
 				col += f.paintSpan(col, line, f.commentStyle, span)
 			case spanIdent:
-				col += f.paintSpan(col, line, f.style, span) //TODO style
+				switch {
+				case hp.Y >= 0 && hp.Y == line && hp.X >= col:
+					w := f.displayWidth(col, span)
+					if hp.X < col+w {
+						if d := f.sf.Xref[token.Pos(v.xref)]; d != nil {
+							f.setTarget(d.Pos())
+						}
+						col += f.paintSpan(col, line, f.identStyle, span)
+						break
+
+					}
+
+					fallthrough
+				default:
+					col += f.paintSpan(col, line, f.style, span)
+				}
 			default:
 				panic("internal error")
 			}
@@ -244,37 +268,39 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 }
 
 func (f *file) paintSpan(x, y int, style wm.Style, s []byte) int {
-	w, s := f.displayString(s)
+	w, s := f.displayString(x, s)
 	f.Printf(f.lnDigits+1+x, y, style, "%s", s)
 	return w
 }
 
-func (f *file) displayWidth(s []byte) (w int) {
+func (f *file) displayWidth(col int, s []byte) (w int) {
+	w = col
 	for len(s) != 0 {
 		r, n := utf8.DecodeRune(s)
 		switch r {
 		case 0, '\r':
 			// nop
 		case '\t':
-			w += 8 - w%8
+			col += 8 - col%8
 		default:
 			switch runewidth.RuneWidth(r) {
 			case 0:
 				// nop
 			case 1:
-				w++
+				col++
 			case 2:
-				w += 2
+				col += 2
 			default:
 				panic("internal error")
 			}
 		}
 		s = s[n:]
 	}
-	return w
+	return col - w
 }
 
-func (f *file) displayString(s []byte) (w int, b []byte) {
+func (f *file) displayString(col int, s []byte) (w int, b []byte) {
+	w = col
 	for len(s) != 0 {
 		r, n := utf8.DecodeRune(s)
 		switch r {
@@ -282,10 +308,10 @@ func (f *file) displayString(s []byte) (w int, b []byte) {
 			// nop
 		case '\t':
 			b = append(b, ' ')
-			w++
-			for w%8 != 0 {
+			col++
+			for col%8 != 0 {
 				b = append(b, ' ')
-				w++
+				col++
 			}
 		default:
 			b = append(b, s[:n]...)
@@ -293,7 +319,7 @@ func (f *file) displayString(s []byte) (w int, b []byte) {
 			case 0:
 				// nop
 			case 1:
-				w++
+				col++
 			case 2:
 				w += 2
 			default:
@@ -302,7 +328,21 @@ func (f *file) displayString(s []byte) (w int, b []byte) {
 		}
 		s = s[n:]
 	}
-	return w, b
+	return col - w, b
+}
+
+func (f *file) enter() {
+	f.browser.howerWin = f
+}
+
+func (f *file) leave() {
+	if f == nil {
+		return
+	}
+
+	f.setTarget(token.NoPos)
+	f.howerPos = wm.Position{-1, -1}
+	f.browser.howerWin = nil
 }
 
 func (f *file) onMouseMove(w *wm.Window, prev wm.OnMouseHandler, button tcell.ButtonMask, screenPos, winPos wm.Position, mods tcell.ModMask) bool {
@@ -310,5 +350,55 @@ func (f *file) onMouseMove(w *wm.Window, prev wm.OnMouseHandler, button tcell.Bu
 		return true
 	}
 
-	return false
+	if m := f.browser.howerWin; m != f {
+		m.leave()
+		f.enter()
+	}
+
+	line := winPos.Y
+	col := winPos.X - f.lnDigits - 1
+	if line < 0 || col < 0 {
+		f.setTarget(token.NoPos)
+		return false
+	}
+
+	f.setHowerPos(wm.Position{col, line})
+	return true
+}
+
+func (f *file) setTarget(pos token.Pos) {
+	if pos == f.target {
+		return
+	}
+
+	f.target = pos
+	f.Invalidate(f.BorderBottomArea())
+}
+
+func (f *file) setHowerPos(pos wm.Position) {
+	p0 := f.howerPos
+	if pos == p0 {
+		return
+	}
+
+	o := f.Origin()
+	if p0.Y >= 0 {
+		f.InvalidateClientArea(wm.NewRectangle(o.X, p0.Y, o.X+f.ClientSize().Width-1, p0.Y))
+	}
+	f.howerPos = pos
+	if pos.Y >= 0 {
+		f.InvalidateClientArea(wm.NewRectangle(o.X, pos.Y, o.X+f.ClientSize().Width-1, pos.Y))
+	}
+}
+
+func (f *file) onPaintBorderBottom(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext) {
+	if prev != nil {
+		prev(w, nil, ctx)
+	}
+
+	if f.target == token.NoPos {
+		return
+	}
+
+	f.Printf(1, f.BorderBottom()-1, f.targetStyle, " %v ", f.browser.ctx.FileSet.Position(f.target))
 }

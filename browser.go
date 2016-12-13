@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	logo   = "http://github.com/cznic/browse"
-	border = 1
+	logo       = "http://github.com/cznic/browse"
+	logoBorder = 1
 )
 
 var (
@@ -50,11 +50,11 @@ type browser struct {
 	ctx       *gc.Context
 	desktop   *wm.Desktop
 	files     map[string]*file
+	howerWin  *file
 	logoStyle wm.Style
-	mouseWin  *wm.Window
 	newWinPos wm.Position
 	pkg       *gc.Package
-	root      *wm.Window
+	theme     *wm.Theme
 }
 
 func newBrowser(ctx *gc.Context) *browser {
@@ -78,13 +78,13 @@ func (b *browser) run(pkg *gc.Package) (err error) {
 
 		colors = info.Colors
 	}
-	theme := theme256
+	b.theme = theme256
 	if colors < 256 {
-		theme = theme8
+		b.theme = theme8
 	}
 
-	b.logoStyle = wm.Style{Background: theme.Desktop.ClientArea.Background, Foreground: tcell.ColorWhite}
-	if app, err = wm.NewApplication(theme); err != nil {
+	b.logoStyle = wm.Style{Background: b.theme.Desktop.ClientArea.Background, Foreground: tcell.ColorWhite}
+	if app, err = wm.NewApplication(b.theme); err != nil {
 		return err
 	}
 
@@ -131,18 +131,27 @@ func (b *browser) onPaintClientArea(w *wm.Window, prev wm.OnPaintHandler, ctx wm
 		prev(w, nil, ctx)
 	}
 	sz := w.Size()
-	w.Printf(sz.Width-border-len(logo), sz.Height-border-1, b.logoStyle, logo)
+	w.Printf(sz.Width-logoBorder-len(logo), sz.Height-logoBorder-1, b.logoStyle, logo)
 	if debug {
-		w.Printf(sz.Width-border-len(logo), sz.Height-border, b.logoStyle, "%v %p", b.desktop.Root().Rendered(), b.mouseWin)
+		w.Printf(sz.Width-logoBorder-len(logo), sz.Height-logoBorder, b.logoStyle, "%v %p", b.desktop.Root().Rendered(), b.howerWin)
 	}
+}
+
+func (b *browser) onMouseMove(w *wm.Window, prev wm.OnMouseHandler, button tcell.ButtonMask, screenPos, winPos wm.Position, mods tcell.ModMask) bool {
+	if prev != nil && prev(w, nil, button, screenPos, winPos, mods) {
+		return true
+	}
+
+	b.howerWin.leave()
+	return true
 }
 
 func (b *browser) setup() {
 	app.SetDoubleClickDuration(0)
 	app.OnKey(b.onKey, nil)
 	r := b.desktop.Root()
-	b.root = r
 	r.OnPaintClientArea(b.onPaintClientArea, nil)
+	r.OnMouseMove(b.onMouseMove, nil)
 	var f *file
 	for _, v := range b.pkg.SourceFiles {
 		f = b.openFile(wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: 80, Height: 24}}, v)
@@ -154,10 +163,10 @@ func (b *browser) setup() {
 	}
 	if debug {
 		go func() {
-			for range time.Tick(time.Second) {
+			for range time.Tick(time.Second / 3) {
 				sz := r.Size()
-				x := sz.Width - border - len(logo)
-				y := sz.Height - border
+				x := sz.Width - logoBorder - len(logo)
+				y := sz.Height - logoBorder
 				app.PostWait(func() {
 					r.InvalidateClientArea(wm.Rectangle{wm.Position{x, y}, wm.Size{len(logo), 1}})
 				})
