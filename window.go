@@ -90,8 +90,8 @@ scan:
 		switch off, t := lx.Scan(); t {
 		case token.IDENT:
 			tok := lx.Token(off)
-			position := fi.PositionFor(tok.Pos, false)
-			pos := sfi.Pos(position.Offset)
+			pos := sfi.Pos(int(off))
+			position := sfi.PositionFor(pos, false)
 			f.spans[int32(position.Line)] = append(
 				f.spans[int32(position.Line)],
 				span{int32(position.Column) - 1, int32(len(tok.Val)), spanIdent, int32(pos)},
