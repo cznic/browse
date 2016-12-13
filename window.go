@@ -249,9 +249,9 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 					if hp.X < col+w {
 						if d := f.sf.Xref[token.Pos(v.xref)]; d != nil {
 							f.setTarget(d.Pos())
+							col += f.paintSpan(col, line, f.identStyle, span)
+							break
 						}
-						col += f.paintSpan(col, line, f.identStyle, span)
-						break
 
 					}
 
