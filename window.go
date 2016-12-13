@@ -78,13 +78,12 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 		return nil
 	}
 
-	fset := token.NewFileSet()
-	fi := fset.AddFile(sf.Path, -1, len(f.src))
-	lx := gc.NewLexer(fi, f.src)
-	lx.CommentHandler = func(off int32, lit []byte) {
-		f.commentHandler(fi.Position(fi.Pos(int(off))), lit)
-	}
+	lx := gc.NewLexer(token.NewFileSet().AddFile(sf.Path, -1, len(f.src)), f.src)
 	sfi := f.sf.File
+	lx.CommentHandler = func(off int32, lit []byte) {
+		pos := sfi.Pos(int(off))
+		f.commentHandler(sfi.Position(pos), lit)
+	}
 scan:
 	for {
 		switch off, t := lx.Scan(); t {
