@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 )
 
 type errorList struct {
@@ -82,4 +84,16 @@ func checkDir(dir string) (bool, error) {
 
 	m, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	return len(m) != 0, err
+}
+
+func isExported(nm string) bool {
+	switch c := nm[0]; {
+	case c >= 'A' && c <= 'Z':
+		return true
+	case c < 0x80:
+		return false
+	default:
+		r, _ := utf8.DecodeRuneInString(nm)
+		return unicode.IsUpper(r)
+	}
 }

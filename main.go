@@ -13,34 +13,54 @@
 // rooted at GOPATH/src, in which case it opens the package files in the
 // current directory.
 //
-// Key bindings
+// Navigation
 //
-// Currently all key bindings are hard coded.
+// Keys recognized by the focused window or the application itself.
 //
-// Application key bindings
+//	<PageUp> or CTRL-B
+//		Scroll window one page Backwards (upwards) in the buffer.
 //
-// Application key bindings are processed regardless of which window, if any,
-// has focus.
+//	CTRL-D
+//		Scroll window half a screen Downwards in the buffer.
 //
-//	Ctrl-Q terminates the application.
+//	CTRL-E
+//		Scroll window one line downwards in the buffer. Mnemonic: Extra lines.
 //
-// File window key bindings
+//	<PageDown> or CTRL-F
+//		Scroll window one page Forwards (downwards) in the buffer.
 //
-// File windows key bindings are processed by the focused window, if any.
+//	<Tab> or CTRL-I
+//		Go to newer cursor position in location history list
 //
-//	Ctrl-D		scrolls half page downwards in the buffer.
-//	Ctrl-E		scrolls one line downwards in the buffer.
-//	Ctrl-U		scrolls half page upwards in the buffer.
-//	Ctrl-W		closes the window.
-//	Ctrl-Y		scrolls one line upwards in the buffer.
-//	End		sets the view to end at the last line.
-//	Home		sets the view to begin at the first line.
-//	PageDown	scrolls the view to the next page.
-//	PageUp		scrolls the view to the previous page.
+//	CTRL-U
+//		Scroll window half a screen Upwards in the buffer.
 //
-// Mouse initiated actions
+//	CTRL-O
+//		Go to Older cursor position in location history list
 //
-// Lorem ipsum TODO.
+//	CTRL-Q
+//		Quit the application.
+//
+//	CTRL-W
+//		Close the Window.
+//
+//	CTRL-Y
+//		Scrolls one line upwards in the buffer.
+//
+//	<Home>
+//		Scroll to the first line.
+//
+//	<End>
+//		Scroll to the last line.
+//
+// Known issues
+//
+// Key bindings and terminal colors are hard coded.
+//
+// In terminals without mouse support there's no way to select and follow links
+// to declarations.
+//
+// CGO identifiers (import "C") are not resolved.
 package main
 
 import (
@@ -108,7 +128,6 @@ outer:
 		defaultTags,
 		searchPaths,
 		gc.DeclarationXref(),
-		gc.IgnoreRedeclarations(),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -119,6 +138,14 @@ outer:
 		log.Fatal(err)
 	}
 
+	//TODO- var a []string
+	//TODO- for _, v := range pkg.SourceFiles {
+	//TODO- 	for k, v := range v.Xref {
+	//TODO- 		a = append(a, fmt.Sprintf("%s: %s: %s", ctx.FileSet.Position(k), ctx.FileSet.Position(v.Pos()), v.Name()))
+	//TODO- 	}
+	//TODO- }
+	//TODO- sort.Strings(a)
+	//TODO- log.Fatal(strings.Join(a, "\n"))
 	if err := newBrowser(ctx).run(pkg); err != nil {
 		log.Fatal(err)
 	}

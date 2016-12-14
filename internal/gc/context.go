@@ -68,6 +68,7 @@ type model struct {
 type tweaks struct {
 	declarationXref      bool
 	ignoreRedeclarations bool
+	ignoreUndefined      bool
 }
 
 // Option amends Context.
@@ -85,6 +86,14 @@ func DeclarationXref() Option {
 func IgnoreRedeclarations() Option {
 	return func(c *Context) error {
 		c.tweaks.ignoreRedeclarations = true
+		return nil
+	}
+}
+
+// IgnoreUndefined disables reporting undefined errors.
+func IgnoreUndefined() Option {
+	return func(c *Context) error {
+		c.tweaks.ignoreUndefined = true
 		return nil
 	}
 }
@@ -449,7 +458,7 @@ func newPackage(ctx *Context, importPath, nm string, errorList *errorList) *Pack
 	if ctx != nil {
 		s = newScope(PackageScope, ctx.universe)
 	}
-	return &Package{
+	p := &Package{
 		ImportPath:     importPath,
 		ImportedBy:     map[string]struct{}{},
 		Imports:        map[string]struct{}{},
@@ -460,6 +469,10 @@ func newPackage(ctx *Context, importPath, nm string, errorList *errorList) *Pack
 		fileScopeNames: map[string]token.Pos{},
 		ready:          make(chan struct{}),
 	}
+	if s != nil {
+		s.pkg = p
+	}
+	return p
 }
 
 func (p *Package) load(position token.Position, paths []string, syntaxError func(*parser)) {
@@ -506,9 +519,11 @@ func (p *Package) load(position token.Position, paths []string, syntaxError func
 	for _, v := range p.SourceFiles {
 		xref := v.Xref
 		for tok, scope := range v.xref {
-			if d := scope.lookup(v.Scope, tok); d != nil {
+			if d := scope.lookup(p, v.Scope, tok); d != nil {
 				xref[tok.Pos] = d
-			}
+			} /*TODO- else {
+				panic(fmt.Sprintf("%s: %s", v.File.Position(tok.Pos), tok.Val))
+			}*/
 		}
 		v.xref = nil
 	}

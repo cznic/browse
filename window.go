@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//TODO nnn<shift-G>
+//TODO nnn<SHIFT-G>
 
 package main
 
@@ -214,7 +214,7 @@ func (f *file) onKey(w *wm.Window, prev wm.OnKeyHandler, key tcell.Key, mod tcel
 	case tcell.KeyEnd:
 		f.End()
 		return true
-	case tcell.KeyPgDn:
+	case tcell.KeyPgDn, tcell.KeyCtrlF:
 		f.PageDown()
 		return true
 	case tcell.KeyPgUp:
@@ -364,7 +364,7 @@ func (f *file) leave() {
 	}
 
 	f.setTarget(token.NoPos)
-	f.howerPos = wm.Position{-1, -1}
+	f.setHowerPos(wm.Position{-1, -1})
 	f.browser.howerWin = nil
 }
 

@@ -41,6 +41,7 @@ type parser struct {
 	scope         *Scope
 	sourceFile    *SourceFile
 	syntaxError   func(*parser)
+	xref          map[Token]*Scope
 
 	off int32
 
@@ -49,10 +50,14 @@ type parser struct {
 }
 
 func newParser(src *SourceFile, l *Lexer) *parser {
-	return &parser{
+	p := &parser{
 		l:          l,
 		sourceFile: src,
 	}
+	if src != nil {
+		p.xref = src.xref
+	}
+	return p
 }
 
 func (p *parser) init(src *SourceFile, l *Lexer) {
@@ -60,6 +65,7 @@ func (p *parser) init(src *SourceFile, l *Lexer) {
 	p.loophack = false
 	p.loophackStack = p.loophackStack[:0]
 	p.sourceFile = src
+	p.xref = src.xref
 }
 
 func (p *parser) err(position token.Position, msg string, args ...interface{}) {
@@ -441,7 +447,7 @@ more:
 		p.otherType()
 		switch p.c {
 		case token.LBRACE, token.LPAREN:
-			p.primaryExpr2()
+			p.primaryExpr2(nil)
 			p.expr2()
 		}
 	case token.FUNC:
@@ -451,16 +457,17 @@ more:
 			fix = true
 			fallthrough
 		case token.LBRACE:
-			p.push(newScope(BlockScope, nil))
 			p.n()
 			p.stmtList()
 			p.loophack = fix
 			p.must(token.RBRACE)
 			p.pop()
 			if p.c == token.LPAREN {
-				p.primaryExpr2()
+				p.primaryExpr2(nil)
 				p.expr2()
 			}
+		default:
+			p.pop()
 		}
 	default:
 		p.syntaxError(p)
@@ -506,6 +513,7 @@ func (p *parser) exprOpt() (isExprPresent bool) {
 // |	primaryExpr '{' bracedKeyValList '}'
 func (p *parser) primaryExpr() (isLabel bool) {
 	var fix bool
+	var q *Scope
 	switch p.c {
 	case token.LPAREN:
 		p.n()
@@ -519,8 +527,11 @@ func (p *parser) primaryExpr() (isLabel bool) {
 			return true
 		}
 
-		if x := p.sourceFile.xref; x != nil {
-			x[tok] = p.scope
+		if p.xref != nil {
+			p.xref[tok] = p.scope
+			if d := p.scope.lookup(p.sourceFile.Package, p.sourceFile.Scope, tok); d != nil && d.Kind() == ImportDeclaration {
+				q = d.ImportSpec().Package.Scope
+			}
 		}
 	case token.FUNC:
 		p.fnType()
@@ -529,18 +540,19 @@ func (p *parser) primaryExpr() (isLabel bool) {
 			fix = true
 			fallthrough
 		case token.LBRACE:
-			p.push(newScope(BlockScope, nil))
 			p.n()
 			p.stmtList()
 			p.loophack = fix
 			p.must(token.RBRACE)
 			p.pop()
 		case token.LPAREN:
+			p.pop()
 			p.n()
 			p.expr()
 			p.opt(token.COMMA)
 			p.must(token.RPAREN)
 		default:
+			p.pop()
 			p.syntaxError(p)
 		}
 	case token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING:
@@ -567,12 +579,12 @@ func (p *parser) primaryExpr() (isLabel bool) {
 	default:
 		p.syntaxError(p)
 	}
-	p.primaryExpr2()
+	p.primaryExpr2(q)
 	return false
 }
 
-func (p *parser) primaryExpr2() {
-	for {
+func (p *parser) primaryExpr2(q *Scope) {
+	for first := true; ; first = false {
 		switch p.c {
 		case token.LPAREN:
 			p.n()
@@ -586,6 +598,10 @@ func (p *parser) primaryExpr2() {
 		case token.PERIOD:
 			switch p.n() {
 			case token.IDENT:
+				tok := p.tok()
+				if q != nil && first && p.xref != nil {
+					p.xref[tok] = q
+				}
 				p.n()
 			case token.LPAREN:
 				p.n()
@@ -858,6 +874,7 @@ func (p *parser) otherType() {
 			p.qualifiedIdent()
 		case token.FUNC:
 			p.fnType()
+			p.pop()
 		case token.MUL:
 			p.ptrType()
 		default:
@@ -913,9 +930,17 @@ func (p *parser) otherType() {
 // 	IDENT %prec _NotParen
 // |	IDENT '.' IDENT
 func (p *parser) qualifiedIdent() {
-	p.must(token.IDENT)
+	tok, ok := p.mustTok(token.IDENT)
+	if ok && p.xref != nil {
+		p.xref[tok] = p.scope
+	}
 	if p.opt(token.PERIOD) {
-		p.must(token.IDENT)
+		tok2, ok := p.mustTok(token.IDENT)
+		if ok && p.xref != nil {
+			if d := p.scope.lookup(p.sourceFile.Package, p.sourceFile.Scope, tok); d != nil && d.Kind() == ImportDeclaration && isExported(tok2.Val) {
+				p.xref[tok2] = d.ImportSpec().Package.Scope
+			}
+		}
 	}
 }
 
@@ -930,6 +955,7 @@ func (p *parser) ptrType() {
 // fnType:
 // 	"func" '(' paramTypeListCommaOptOpt ')' result
 func (p *parser) fnType() {
+	p.push(newScope(BlockScope, nil))
 	p.n() // "func"
 	p.must(token.LPAREN)
 	p.paramTypeListCommaOptOpt()
@@ -982,6 +1008,7 @@ func (p *parser) typ() {
 		p.genericArgsOpt()
 	case token.FUNC:
 		p.fnType()
+		p.pop()
 	case token.CHAN, token.INTERFACE, token.MAP, token.STRUCT, token.LBRACK:
 		p.otherType()
 	case token.MUL:
@@ -1189,6 +1216,7 @@ func (p *parser) result() {
 		p.genericArgsOpt()
 	case token.FUNC:
 		p.fnType()
+		p.pop()
 	case token.CHAN, token.INTERFACE, token.MAP, token.STRUCT, token.LBRACK:
 		p.otherType()
 	case token.MUL:
@@ -1484,11 +1512,10 @@ func (p *parser) stmtList() {
 // |	'{' stmtList '}'
 func (p *parser) fnBody() {
 	if p.opt(token.LBRACE) {
-		p.push(newScope(BlockScope, nil))
 		p.stmtList()
 		p.must(token.RBRACE)
-		p.pop()
 	}
+	p.pop()
 }
 
 // topLevelDeclList:
@@ -1500,13 +1527,14 @@ func (p *parser) topLevelDeclList() {
 		p.scope = p.sourceFile.Package.Scope
 		switch p.c {
 		case token.FUNC:
+			p.push(newScope(BlockScope, nil))
 			switch p.n() {
 			case token.IDENT:
 				switch tok := p.tok(); {
 				case tok.Val == "init":
 					p.sourceFile.InitFunctions = append(p.sourceFile.InitFunctions, newFuncDecl(p.tok(), token.NoPos))
 				default:
-					p.scope.declare(p, newFuncDecl(p.tok(), token.NoPos))
+					p.scope.Parent.declare(p, newFuncDecl(p.tok(), token.NoPos))
 				}
 				p.n()
 				p.genericParamsOpt()

@@ -88,6 +88,7 @@ type Scope struct {
 	Labels   Bindings
 	Parent   *Scope
 	Unbound  []Declaration // Declarations named _.
+	pkg      *Package      // Only for Package scope.
 }
 
 func newScope(kind ScopeKind, parent *Scope) *Scope {
@@ -126,13 +127,13 @@ func (s *Scope) declare(p *parser, d Declaration) {
 	}
 }
 
-func (s *Scope) lookup(fileScope *Scope, nm Token) Declaration {
+func (s *Scope) lookup(pkg *Package, fileScope *Scope, nm Token) Declaration {
 	for s0 := s; s != nil; s = s.Parent {
 		if d, ok := s.Bindings[nm.Val]; ok && (s.Kind != BlockScope || s != s0 || d.Pos() < nm.Pos) {
 			return d
 		}
 
-		if s.Kind == PackageScope {
+		if s.Kind == PackageScope && s.pkg == pkg && fileScope != nil {
 			if d, ok := fileScope.Bindings[nm.Val]; ok {
 				return d
 			}
