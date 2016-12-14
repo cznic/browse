@@ -29,6 +29,7 @@ import (
 	dfa "github.com/cznic/lexer"
 	"github.com/cznic/mathutil"
 	"github.com/cznic/sortutil"
+	"github.com/cznic/strutil"
 	"github.com/cznic/y"
 	"github.com/edsrzf/mmap-go"
 )
@@ -93,6 +94,8 @@ func init() {
 
 	panic("internal error")
 }
+
+func pretty(v interface{}) string { return strutil.PrettyString(v, "", "", nil) }
 
 // ============================================================================
 
@@ -1267,7 +1270,11 @@ func newTestContext() (*Context, error) {
 	for i, v := range a {
 		a[i] = filepath.Join(v, "src")
 	}
-	return NewContext(runtime.GOOS, runtime.GOARCH, VersionTags(), append([]string{filepath.Join(runtime.GOROOT(), "src")}, a...))
+	tags := VersionTags()
+	if os.Getenv("CGO_ENABLED") != "0" {
+		tags = append(tags, "cgo")
+	}
+	return NewContext(runtime.GOOS, runtime.GOARCH, tags, append([]string{filepath.Join(runtime.GOROOT(), "src")}, a...))
 }
 
 func testParser(t *testing.T, packages []*Package) {

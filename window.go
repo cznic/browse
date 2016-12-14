@@ -34,16 +34,23 @@ type span struct {
 	xref   int32
 }
 
+type location struct {
+	sf       *gc.SourceFile
+	viewport wm.Position
+}
+
 type file struct {
 	*tk.View
 	browser      *browser
 	commentStyle wm.Style
 	howerPos     wm.Position
 	identStyle   wm.Style
-	lnDigits     int
-	lnOffsets    []int
-	lnStyle      wm.Style
-	sf           *gc.SourceFile
+	lineNoDigits int
+	lineOffsets  []int
+	lineStyle    wm.Style
+	next         []location
+	prev         []location
+	sourceFile   *gc.SourceFile
 	spans        map[int32][]span // line: []span
 	src          []byte
 	style        wm.Style
@@ -65,8 +72,8 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 		browser:      b,
 		commentStyle: wm.Style{Foreground: commentColor, Background: style.Background},
 		identStyle:   identStyle,
-		lnStyle:      wm.Style{Foreground: color, Background: style.Background},
-		sf:           sf,
+		lineStyle:    wm.Style{Foreground: color, Background: style.Background},
+		sourceFile:   sf,
 		spans:        map[int32][]span{},
 		style:        style,
 		targetStyle:  b.theme.ChildWindow.Border,
@@ -79,7 +86,7 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 	}
 
 	lx := gc.NewLexer(token.NewFileSet().AddFile(sf.Path, -1, len(f.src)), f.src)
-	sfi := f.sf.File
+	sfi := f.sourceFile.File
 	lx.CommentHandler = func(off int32, lit []byte) {
 		pos := sfi.Pos(int(off))
 		f.commentHandler(sfi.Position(pos), lit)
@@ -108,15 +115,15 @@ scan:
 	for nlines := len(blines); nlines > 9; nlines /= 10 {
 		n++
 	}
-	f.lnDigits = n
-	f.lnOffsets = make([]int, len(blines)+1)
+	f.lineNoDigits = n
+	f.lineOffsets = make([]int, len(blines)+1)
 	off := 0
 	for i, v := range blines {
-		f.lnOffsets[i] = off
+		f.lineOffsets[i] = off
 		off += len(v) + 1
 	}
-	f.lnOffsets[len(f.lnOffsets)-1] = len(f.src)
-	b.files[sf.Path] = f
+	f.lineOffsets[len(f.lineOffsets)-1] = len(f.src)
+	f.OnClick(f.onClick, nil)
 	f.OnClose(f.onClose, nil)
 	f.OnKey(f.onKey, nil)
 	f.OnMouseMove(f.onMouseMove, nil)
@@ -125,6 +132,7 @@ scan:
 	f.SetCloseButton(true)
 	f.SetSize(area.Size)
 	f.SetTitle(sf.Path)
+	f.browser.files++
 	return f
 }
 
@@ -144,8 +152,8 @@ func (f *file) onClose(w *wm.Window, prev wm.OnCloseHandler) {
 		prev(w, nil)
 	}
 
-	delete(f.browser.files, f.sf.Path)
-	if len(f.browser.files) == 0 {
+	f.browser.files--
+	if f.browser.files == 0 {
 		app.Exit(nil)
 		return
 	}
@@ -174,6 +182,22 @@ func (f *file) onKey(w *wm.Window, prev wm.OnKeyHandler, key tcell.Key, mod tcel
 		return true
 	case tcell.KeyCtrlE:
 		f.SetOrigin(wm.Position{X: o.X, Y: o.Y + 1})
+		return true
+	case tcell.KeyTAB:
+		if n := len(f.next); n != 0 {
+			loc := f.next[n-1]
+			next := f.next[:n-1]
+			prev := append(f.prev, f.location())
+			f.exec(loc, prev, next)
+		}
+		return true
+	case tcell.KeyCtrlO:
+		if n := len(f.prev); n != 0 {
+			loc := f.prev[n-1]
+			prev := f.prev[:n-1]
+			next := append(f.next, f.location())
+			f.exec(loc, prev, next)
+		}
 		return true
 	case tcell.KeyCtrlU:
 		f.SetOrigin(wm.Position{X: o.X, Y: o.Y - f.ClientSize().Height/2})
@@ -205,14 +229,14 @@ func (f *file) Metrics(viewport wm.Rectangle) wm.Size {
 	w := -1
 	for i := 0; i < viewport.Height; i++ {
 		line := viewport.Y + i
-		if line < 0 || line >= len(f.lnOffsets)-1 {
+		if line < 0 || line >= len(f.lineOffsets)-1 {
 			break
 		}
 
-		dw := f.displayWidth(0, f.src[f.lnOffsets[line]:f.lnOffsets[line+1]])
-		w = mathutil.Max(w, f.lnDigits+dw)
+		dw := f.displayWidth(0, f.src[f.lineOffsets[line]:f.lineOffsets[line+1]])
+		w = mathutil.Max(w, f.lineNoDigits+dw)
 	}
-	return wm.Size{Width: w, Height: len(f.lnOffsets) - 1}
+	return wm.Size{Width: w, Height: len(f.lineOffsets) - 1}
 }
 
 func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext) {
@@ -224,12 +248,12 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 	f.setTarget(token.NoPos)
 	for i := 0; i < ctx.Height; i++ {
 		line := ctx.Y - cpY + i
-		if line < 0 || line >= len(f.lnOffsets)-1 {
+		if line < 0 || line >= len(f.lineOffsets)-1 {
 			break
 		}
 
-		f.Printf(0, line, f.lnStyle, "%*d", f.lnDigits, line+1)
-		src := f.src[f.lnOffsets[line]:f.lnOffsets[line+1]]
+		f.Printf(0, line, f.lineStyle, "%*d", f.lineNoDigits, line+1)
+		src := f.src[f.lineOffsets[line]:f.lineOffsets[line+1]]
 		var col, off int
 		hp := f.howerPos
 		for _, v := range f.spans[int32(line+1)] {
@@ -246,7 +270,7 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 				case hp.Y >= 0 && hp.Y == line && hp.X >= col:
 					w := f.displayWidth(col, span)
 					if hp.X < col+w {
-						if d := f.sf.Xref[token.Pos(v.xref)]; d != nil {
+						if d := f.sourceFile.Xref[token.Pos(v.xref)]; d != nil {
 							f.setTarget(d.Pos())
 							col += f.paintSpan(col, line, f.identStyle, span)
 							break
@@ -268,7 +292,7 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 
 func (f *file) paintSpan(x, y int, style wm.Style, s []byte) int {
 	w, s := f.displayString(x, s)
-	f.Printf(f.lnDigits+1+x, y, style, "%s", s)
+	f.Printf(f.lineNoDigits+1+x, y, style, "%s", s)
 	return w
 }
 
@@ -355,38 +379,38 @@ func (f *file) onMouseMove(w *wm.Window, prev wm.OnMouseHandler, button tcell.Bu
 	}
 
 	line := winPos.Y
-	col := winPos.X - f.lnDigits - 1
+	col := winPos.X - f.lineNoDigits - 1
 	if line < 0 || col < 0 {
 		f.setTarget(token.NoPos)
-		return false
+		return true
 	}
 
 	f.setHowerPos(wm.Position{col, line})
 	return true
 }
 
-func (f *file) setTarget(pos token.Pos) {
-	if pos == f.target {
+func (f *file) setTarget(new token.Pos) {
+	if new == f.target {
 		return
 	}
 
-	f.target = pos
+	f.target = new
 	f.Invalidate(f.BorderBottomArea())
 }
 
-func (f *file) setHowerPos(pos wm.Position) {
-	p0 := f.howerPos
-	if pos == p0 {
+func (f *file) setHowerPos(new wm.Position) {
+	old := f.howerPos
+	if new == old {
 		return
 	}
 
 	o := f.Origin()
-	if p0.Y >= 0 {
-		f.InvalidateClientArea(wm.NewRectangle(o.X, p0.Y, o.X+f.ClientSize().Width-1, p0.Y))
+	if old.Y >= 0 {
+		f.InvalidateClientArea(wm.NewRectangle(o.X, old.Y, o.X+f.ClientSize().Width-1, old.Y))
 	}
-	f.howerPos = pos
-	if pos.Y >= 0 {
-		f.InvalidateClientArea(wm.NewRectangle(o.X, pos.Y, o.X+f.ClientSize().Width-1, pos.Y))
+	f.howerPos = new
+	if new.Y >= 0 {
+		f.InvalidateClientArea(wm.NewRectangle(o.X, new.Y, o.X+f.ClientSize().Width-1, new.Y))
 	}
 }
 
@@ -400,4 +424,55 @@ func (f *file) onPaintBorderBottom(w *wm.Window, prev wm.OnPaintHandler, ctx wm.
 	}
 
 	f.Printf(1, f.BorderBottom()-1, f.targetStyle, " %v ", f.browser.ctx.FileSet.Position(f.target))
+}
+
+func (f *file) exec(loc location, prev, next []location) *file {
+	g := newFile(f.browser, f.Area(), loc.sf)
+	g.prev = prev
+	g.next = next
+	g.SetPosition(f.Position())
+	g.SetSize(f.Size())
+	f.Close()
+	g.BringToFront()
+	g.SetOrigin(loc.viewport)
+	g.SetFocus(true)
+	return g
+}
+
+func (f *file) location() location { return location{f.sourceFile, f.Origin()} }
+
+func (f *file) onClick(w *wm.Window, prev wm.OnMouseHandler, button tcell.ButtonMask, screenPos, winPos wm.Position, mods tcell.ModMask) bool {
+	if prev != nil && prev(w, nil, button, screenPos, winPos, mods) {
+		return true
+	}
+
+	if mods&(tcell.ModAlt|tcell.ModMeta|tcell.ModShift) != 0 {
+		return false
+	}
+
+	if f.target == token.NoPos {
+		return true
+	}
+
+	ctx := f.browser.ctx
+	position := ctx.FileSet.PositionFor(f.target, false)
+	sf := ctx.SourceFileForPath(position.Filename)
+	switch {
+	case button&tcell.Button1 != 0:
+		if mods&tcell.ModCtrl == 0 {
+			prev := append(f.prev, f.location())
+			next := f.next
+			f.exec(location{sf, wm.Position{0, position.Line - 1}}, prev, next)
+			return true
+		}
+
+		fallthrough
+	case button&tcell.Button2 != 0:
+		f = f.browser.newFile(sf)
+		f.BringToFront()
+		f.SetOrigin(wm.Position{0, position.Line - 1})
+		f.SetFocus(true)
+		return true
+	}
+	return false
 }

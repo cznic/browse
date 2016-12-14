@@ -235,6 +235,24 @@ func (c *Context) dirForImportPath(importPath string) (string, error) {
 	return "", fmt.Errorf("%s", strings.Join(a, "\n"))
 }
 
+// SourceFileForPath searches loaded packages for the one containing the file
+// at path.  The result is nil if the file is not considered for build by any
+// of the loaded packages.
+func (c *Context) SourceFileForPath(path string) *SourceFile {
+	c.packagesMu.Lock()
+	defer c.packagesMu.Unlock()
+
+	for _, p := range c.packages {
+		for _, f := range p.SourceFiles {
+			if f.Path == path {
+				return f
+			}
+		}
+	}
+
+	return nil
+}
+
 func (c *Context) filesForImportPath(importPath string) (dir string, sourceFiles []string, testFiles []string, err error) {
 	if importPath == "C" {
 		return "", nil, nil, nil
@@ -334,6 +352,7 @@ func (c *Context) Load(importPath string) (*Package, error) {
 type SourceFile struct {
 	File          *token.File
 	ImportSpecs   []*ImportSpec
+	InitFunctions []Declaration
 	Package       *Package
 	Path          string
 	Scope         *Scope // File scope.
@@ -484,6 +503,15 @@ func (p *Package) load(position token.Position, paths []string, syntaxError func
 		}
 	}
 	//TODO p.check()
+	for _, v := range p.SourceFiles {
+		xref := v.Xref
+		for tok, scope := range v.xref {
+			if d := scope.lookup(v.Scope, tok); d != nil {
+				xref[tok.Pos] = d
+			}
+		}
+		v.xref = nil
+	}
 }
 
 func (p *Package) waitFor() *Package {

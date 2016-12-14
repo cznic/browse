@@ -16,6 +16,9 @@ import (
 const (
 	logo       = "http://github.com/cznic/browse"
 	logoBorder = 1
+
+	defaultWindowWidth  = 80
+	defaultWindowHeight = 24
 )
 
 var (
@@ -49,7 +52,7 @@ var (
 type browser struct {
 	ctx       *gc.Context
 	desktop   *wm.Desktop
-	files     map[string]*file
+	files     int
 	howerWin  *file
 	logoStyle wm.Style
 	newWinPos wm.Position
@@ -60,7 +63,6 @@ type browser struct {
 func newBrowser(ctx *gc.Context) *browser {
 	return &browser{
 		ctx:       ctx,
-		files:     map[string]*file{},
 		newWinPos: wm.Position{X: 2, Y: 2},
 	}
 }
@@ -104,14 +106,6 @@ func (b *browser) incNewWinPos() {
 	}
 }
 
-func (b *browser) openFile(area wm.Rectangle, sf *gc.SourceFile) *file {
-	f := b.files[sf.Path]
-	if f == nil {
-		f = newFile(b, area, sf)
-	}
-	return f
-}
-
 func (b *browser) onKey(w *wm.Window, prev wm.OnKeyHandler, key tcell.Key, mod tcell.ModMask, r rune) bool {
 	if prev != nil && prev(w, nil, key, mod, r) {
 		return true
@@ -146,6 +140,13 @@ func (b *browser) onMouseMove(w *wm.Window, prev wm.OnMouseHandler, button tcell
 	return true
 }
 
+func (b *browser) newFile(sf *gc.SourceFile) *file {
+	f := newFile(b, wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: defaultWindowWidth, Height: defaultWindowHeight}}, sf)
+	f.Invalidate(f.Area())
+	b.incNewWinPos()
+	return f
+}
+
 func (b *browser) setup() {
 	app.SetDoubleClickDuration(0)
 	app.OnKey(b.onKey, nil)
@@ -154,8 +155,7 @@ func (b *browser) setup() {
 	r.OnMouseMove(b.onMouseMove, nil)
 	var f *file
 	for _, v := range b.pkg.SourceFiles {
-		f = b.openFile(wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: 80, Height: 24}}, v)
-		b.incNewWinPos()
+		f = b.newFile(v)
 	}
 	if f != nil {
 		f.BringToFront()

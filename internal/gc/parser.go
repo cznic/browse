@@ -232,21 +232,6 @@ func (p *parser) pop() {
 	p.scope = p.scope.Parent
 }
 
-func (p *parser) lookup(s *Scope, nm Token) Declaration {
-	for s0 := s; s != nil; s = s.Parent {
-		if d, ok := s.Bindings[nm.Val]; ok && (s.Kind != BlockScope || s != s0 || d.Pos() < nm.Pos) {
-			return d
-		}
-
-		if s.Kind == PackageScope {
-			if d, ok := p.sourceFile.Scope.Bindings[nm.Val]; ok {
-				return d
-			}
-		}
-	}
-	return nil
-}
-
 // ImportSpec is an import declaration.
 type ImportSpec struct {
 	Dot        bool     // The `import . "foo/bar"` variant is used.
@@ -466,10 +451,12 @@ more:
 			fix = true
 			fallthrough
 		case token.LBRACE:
+			p.push(newScope(BlockScope, nil))
 			p.n()
 			p.stmtList()
 			p.loophack = fix
 			p.must(token.RBRACE)
+			p.pop()
 			if p.c == token.LPAREN {
 				p.primaryExpr2()
 				p.expr2()
@@ -542,10 +529,12 @@ func (p *parser) primaryExpr() (isLabel bool) {
 			fix = true
 			fallthrough
 		case token.LBRACE:
+			p.push(newScope(BlockScope, nil))
 			p.n()
 			p.stmtList()
 			p.loophack = fix
 			p.must(token.RBRACE)
+			p.pop()
 		case token.LPAREN:
 			p.n()
 			p.expr()
@@ -1017,7 +1006,13 @@ func (p *parser) genericParamsOpt() {
 // typeSpec:
 //	IDENT genericParamsOpt typ
 func (p *parser) typeSpec() {
-	p.must(token.IDENT)
+	if tok, ok := p.mustTok(token.IDENT); ok {
+		pos := token.NoPos
+		if p.scope.Kind != PackageScope {
+			pos = p.pos()
+		}
+		p.scope.declare(p, newTypeDecl(tok, pos))
+	}
 	p.genericParamsOpt()
 	p.typ()
 }
@@ -1036,7 +1031,18 @@ func (p *parser) typeSpecList() {
 // |	identList typ
 // |	identList typ '=' exprList
 func (p *parser) varSpec() {
-	p.identList()
+	l := p.identList()
+
+	defer func() {
+		pos := token.NoPos
+		if p.scope.Kind != PackageScope {
+			pos = p.pos()
+		}
+		for _, v := range l {
+			p.scope.declare(p, newVarDecl(v, pos))
+		}
+	}()
+
 	switch p.c {
 	case token.ASSIGN:
 		p.n()
@@ -1496,6 +1502,12 @@ func (p *parser) topLevelDeclList() {
 		case token.FUNC:
 			switch p.n() {
 			case token.IDENT:
+				switch tok := p.tok(); {
+				case tok.Val == "init":
+					p.sourceFile.InitFunctions = append(p.sourceFile.InitFunctions, newFuncDecl(p.tok(), token.NoPos))
+				default:
+					p.scope.declare(p, newFuncDecl(p.tok(), token.NoPos))
+				}
 				p.n()
 				p.genericParamsOpt()
 				switch p.c {
@@ -1565,12 +1577,5 @@ func (p *parser) file() {
 		if p.scope != nil && p.scope.Kind != PackageScope {
 			panic("internal error")
 		}
-		xref := p.sourceFile.Xref
-		for tok, scope := range p.sourceFile.xref {
-			if d := p.lookup(scope, tok); d != nil {
-				xref[tok.Pos] = d
-			}
-		}
-		p.sourceFile.xref = nil
 	}
 }

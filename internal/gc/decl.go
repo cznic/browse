@@ -42,7 +42,7 @@ func (b *Bindings) declare(p *parser, d Declaration) {
 		return
 	}
 
-	p.err(p.l.file.Position(d.Pos()), "%v redeclared in this block\n\tprevious declaration at %v", d.Name(), ex.Pos())
+	p.err(p.l.file.Position(d.Pos()), "%v redeclared in this block\n\tprevious declaration at %v", d.Name(), p.sourceFile.Package.ctx.FileSet.Position(ex.Pos()))
 }
 
 // ---------------------------------------------------------------- declaration
@@ -105,7 +105,7 @@ func (s *Scope) declare(p *parser, d Declaration) {
 	}
 
 	switch d.(type) {
-	case *ConstDecl:
+	case *ConstDecl, *VarDecl, *TypeDecl, *FuncDecl:
 		s.Bindings.declare(p, d)
 	case *ImportSpec:
 		if s.Kind != FileScope { //TODO-
@@ -124,6 +124,21 @@ func (s *Scope) declare(p *parser, d Declaration) {
 	default:
 		panic("internal error")
 	}
+}
+
+func (s *Scope) lookup(fileScope *Scope, nm Token) Declaration {
+	for s0 := s; s != nil; s = s.Parent {
+		if d, ok := s.Bindings[nm.Val]; ok && (s.Kind != BlockScope || s != s0 || d.Pos() < nm.Pos) {
+			return d
+		}
+
+		if s.Kind == PackageScope {
+			if d, ok := fileScope.Bindings[nm.Val]; ok {
+				return d
+			}
+		}
+	}
+	return nil
 }
 
 // ConstDecl describes a constant declaration.
