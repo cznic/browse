@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cznic/browse/internal/gc"
+	"github.com/cznic/ftoken"
 	"github.com/cznic/mathutil"
 	"github.com/cznic/wm"
 	"github.com/cznic/wm/tk"
@@ -35,8 +36,8 @@ type span struct {
 }
 
 type location struct {
-	sf       *gc.SourceFile
-	viewport wm.Position
+	sourceFile *gc.SourceFile
+	viewport   wm.Position
 }
 
 type file struct {
@@ -58,7 +59,7 @@ type file struct {
 	targetStyle  wm.Style
 }
 
-func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
+func newFile(b *browser, area wm.Rectangle, sourceFile *gc.SourceFile) *file {
 	color := tcell.NewHexColor(0x999999)
 	commentColor := tcell.NewHexColor(0x0e6e2c)
 	if app.Colors() < 256 {
@@ -73,19 +74,19 @@ func newFile(b *browser, area wm.Rectangle, sf *gc.SourceFile) *file {
 		commentStyle: wm.Style{Foreground: commentColor, Background: style.Background},
 		identStyle:   identStyle,
 		lineStyle:    wm.Style{Foreground: color, Background: style.Background},
-		sourceFile:   sf,
+		sourceFile:   sourceFile,
 		spans:        map[int32][]span{},
 		style:        style,
 		targetStyle:  b.theme.ChildWindow.Border,
 	}
 
 	var err error
-	if f.src, err = ioutil.ReadFile(sf.Path); err != nil {
+	if f.src, err = ioutil.ReadFile(sourceFile.Path); err != nil {
 		app.Exit(err)
 		return nil
 	}
 
-	lx := gc.NewLexer(token.NewFileSet().AddFile(sf.Path, -1, len(f.src)), f.src)
+	lx := gc.NewLexer(ftoken.NewFileSet().AddFile(sourceFile.Path, -1, len(f.src)), f.src)
 	sfi := f.sourceFile.File
 	lx.CommentHandler = func(off int32, lit []byte) {
 		pos := sfi.Pos(int(off))
@@ -131,7 +132,7 @@ scan:
 	f.OnPaintClientArea(f.onPaint, nil)
 	f.SetCloseButton(true)
 	f.SetSize(area.Size)
-	f.SetTitle(sf.Path)
+	f.SetTitle(sourceFile.Path)
 	f.browser.files++
 	return f
 }
@@ -423,11 +424,12 @@ func (f *file) onPaintBorderBottom(w *wm.Window, prev wm.OnPaintHandler, ctx wm.
 		return
 	}
 
-	f.Printf(1, f.BorderBottom()-1, f.targetStyle, " %v ", f.browser.ctx.FileSet.Position(f.target))
+	fi := f.browser.ctx.FileSet.File(f.target)
+	f.Printf(1, f.BorderBottom()-1, f.targetStyle, " %v ", fi.Position(f.target))
 }
 
 func (f *file) exec(loc location, prev, next []location) *file {
-	g := newFile(f.browser, f.Area(), loc.sf)
+	g := newFile(f.browser, f.Area(), loc.sourceFile)
 	g.prev = prev
 	g.next = next
 	g.SetPosition(f.Position())
@@ -455,20 +457,21 @@ func (f *file) onClick(w *wm.Window, prev wm.OnMouseHandler, button tcell.Button
 	}
 
 	ctx := f.browser.ctx
-	position := ctx.FileSet.PositionFor(f.target, false)
-	sf := ctx.SourceFileForPath(position.Filename)
+	fi := ctx.FileSet.File(f.target)
+	position := fi.PositionFor(f.target, false)
+	sourceFile := ctx.SourceFileForPath(position.Filename)
 	switch {
 	case button&tcell.Button1 != 0:
 		if mods&tcell.ModCtrl == 0 {
 			prev := append(f.prev, f.location())
 			next := f.next
-			f.exec(location{sf, wm.Position{0, position.Line - 1}}, prev, next)
+			f.exec(location{sourceFile, wm.Position{0, position.Line - 1}}, prev, next)
 			return true
 		}
 
 		fallthrough
 	case button&tcell.Button2 != 0:
-		f = f.browser.newFile(sf)
+		f = f.browser.newFile(sourceFile)
 		f.BringToFront()
 		f.SetOrigin(wm.Position{0, position.Line - 1})
 		f.SetFocus(true)

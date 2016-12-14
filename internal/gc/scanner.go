@@ -10,6 +10,8 @@ import (
 	"bytes"
 	"go/token"
 	"unicode/utf8"
+
+	"github.com/cznic/ftoken"
 )
 
 // Non ASCII character classes.
@@ -65,7 +67,7 @@ type Lexer struct {
 	CommentHandler func(off int32, lit []byte)
 	errHandler     func(position token.Position, msg string, args ...interface{})
 	errorCount     int // Number of errors encountered.
-	file           *token.File
+	file           *ftoken.File
 	fname          *string
 	lit            []byte
 	prev           token.Token
@@ -79,7 +81,7 @@ type Lexer struct {
 }
 
 // NewLexer returns a newly created Lexer.
-func NewLexer(file *token.File, src []byte) *Lexer {
+func NewLexer(file *ftoken.File, src []byte) *Lexer {
 	l := &Lexer{
 		file: file,
 		src:  src,
@@ -91,7 +93,7 @@ func NewLexer(file *token.File, src []byte) *Lexer {
 	return l
 }
 
-func (l *Lexer) init(file *token.File, src []byte) *Lexer {
+func (l *Lexer) init(file *ftoken.File, src []byte) *Lexer {
 	l.commentOfs = -1
 	l.errorCount = 0
 	l.lit = nil

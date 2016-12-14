@@ -140,8 +140,8 @@ func (b *browser) onMouseMove(w *wm.Window, prev wm.OnMouseHandler, button tcell
 	return true
 }
 
-func (b *browser) newFile(sf *gc.SourceFile) *file {
-	f := newFile(b, wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: defaultWindowWidth, Height: defaultWindowHeight}}, sf)
+func (b *browser) newFile(sourceFile *gc.SourceFile) *file {
+	f := newFile(b, wm.Rectangle{Position: b.newWinPos, Size: wm.Size{Width: defaultWindowWidth, Height: defaultWindowHeight}}, sourceFile)
 	f.Invalidate(f.Area())
 	b.incNewWinPos()
 	return f

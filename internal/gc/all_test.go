@@ -25,6 +25,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cznic/ftoken"
 	"github.com/cznic/lex"
 	dfa "github.com/cznic/lexer"
 	"github.com/cznic/mathutil"
@@ -277,7 +278,7 @@ var (
 				return err
 			}
 
-			ctx := &Context{FileSet: token.NewFileSet()}
+			ctx := &Context{FileSet: ftoken.NewFileSet()}
 			pkg := newPackage(ctx, p.ImportPath, p.Name, nil)
 			for _, v := range p.GoFiles {
 				path := filepath.Join(p.Dir, v)
@@ -350,7 +351,8 @@ func testScannerStates(t *testing.T) {
 	mn := len(lexL.Dfa)
 	mn0 := mn
 	m := make([]bool, mn+1) // 1-based state.Index.
-	fset := token.NewFileSet()
+	fset := ftoken.NewFileSet()
+	fset2 := token.NewFileSet()
 	var ss scanner.Scanner
 	l := NewLexer(nil, nil)
 	nerr := 0
@@ -437,7 +439,7 @@ func testScannerStates(t *testing.T) {
 			}
 
 			fi := fset.AddFile("", -1, len(src))
-			fi2 := fset.AddFile("", -1, len(src))
+			fi2 := fset2.AddFile("", -1, len(src))
 			errCnt := 0
 			b := []byte(src)
 			var errs, errs2 scanner.ErrorList
@@ -537,7 +539,7 @@ func testScannerBugs(t *testing.T) {
 		tok token.Token
 		lit string
 	}
-	fset := token.NewFileSet()
+	fset := ftoken.NewFileSet()
 	l := NewLexer(nil, nil)
 	n := *oN
 	nerr := 0
@@ -665,7 +667,8 @@ func testScannerBugs(t *testing.T) {
 }
 
 func testScanner(t *testing.T, paths []string) {
-	fset := token.NewFileSet()
+	fset := ftoken.NewFileSet()
+	fset2 := token.NewFileSet()
 	var s scanner.Scanner
 	l := NewLexer(nil, nil)
 	sum := 0
@@ -681,7 +684,7 @@ outer:
 
 		sum += len(src)
 		fi := fset.AddFile(path, -1, len(src))
-		fi2 := fset.AddFile(path, -1, len(src))
+		fi2 := fset2.AddFile(path, -1, len(src))
 		var se scanner.ErrorList
 		l.init(fi, src)
 		l.fname = &path
@@ -829,7 +832,7 @@ func BenchmarkScanner(b *testing.B) {
 
 	b.Run("Std", func(b *testing.B) {
 		c := make(chan error, len(stdLibFiles))
-		fset := token.NewFileSet()
+		fset := ftoken.NewFileSet()
 		b.ResetTimer()
 		var sum int
 		for i := 0; i < b.N; i++ {
@@ -942,7 +945,7 @@ type ylex struct {
 	tok           token.Token
 }
 
-func (l *ylex) init(file *token.File, src []byte) {
+func (l *ylex) init(file *ftoken.File, src []byte) {
 	l.Lexer.init(file, src)
 	l.lbrace = 0
 	l.lbraceStack = l.lbraceStack[:0]
@@ -1196,7 +1199,7 @@ func testParserYacc(t *testing.T, files []string) {
 	sum := 0
 	toks := 0
 	nfiles := 0
-	fset := token.NewFileSet()
+	fset := ftoken.NewFileSet()
 	for _, path := range files {
 		src, err := ioutil.ReadFile(path)
 		if err != nil {
@@ -1246,7 +1249,7 @@ func (p *parser) fail(nm string) string {
 		func(st int) { states = append(states, st) },
 	)
 	yl = newYlex(NewLexer(nil, nil), yp)
-	fset := token.NewFileSet()
+	fset := ftoken.NewFileSet()
 	yl.init(fset.AddFile("", -1, len(p.l.src)), p.l.src)
 	yp.parse(
 		func(st int) *y.Symbol {
@@ -1311,7 +1314,7 @@ func testParserRejectFS(t *testing.T) {
 	yp := newYParser(nil, nil)
 	l := NewLexer(nil, nil)
 	cases := 0
-	fset := token.NewFileSet()
+	fset := ftoken.NewFileSet()
 	for state, s := range yp0.States {
 		syms, _ := s.Syms0()
 		var a []string
@@ -1496,7 +1499,7 @@ func testParserErrchk(t *testing.T) {
 	l.CommentHandler = func(off int32, lit []byte) {
 		checks.comment(l.position(off), lit)
 	}
-	fset := token.NewFileSet()
+	fset := ftoken.NewFileSet()
 	for _, fn := range errchkFiles {
 		src, err := ioutil.ReadFile(fn)
 		if err != nil {

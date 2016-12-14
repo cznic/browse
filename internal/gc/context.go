@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cznic/ftoken"
 	"github.com/edsrzf/mmap-go"
 )
 
@@ -100,7 +101,7 @@ func IgnoreUndefined() Option {
 
 // Context describes the context of loaded packages.
 type Context struct {
-	FileSet       *token.FileSet // Contains all loaded files.
+	FileSet       *ftoken.FileSet // Contains all loaded files.
 	goarch        string
 	goos          string
 	ignoreImports bool // Test hook.
@@ -134,7 +135,7 @@ func NewContext(goos, goarch string, tags, searchPaths []string, options ...Opti
 	tm[goos] = struct{}{}
 	tm[goarch] = struct{}{}
 	c := &Context{
-		FileSet:     token.NewFileSet(),
+		FileSet:     ftoken.NewFileSet(),
 		goarch:      goarch,
 		goos:        goos,
 		model:       model,
@@ -359,7 +360,7 @@ func (c *Context) Load(importPath string) (*Package, error) {
 
 // SourceFile describes a source file.
 type SourceFile struct {
-	File          *token.File
+	File          *ftoken.File
 	ImportSpecs   []*ImportSpec
 	InitFunctions []Declaration
 	Package       *Package
@@ -377,7 +378,7 @@ type SourceFile struct {
 func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *SourceFile {
 	var (
 		s     *Scope
-		fset  *token.FileSet
+		fset  *ftoken.FileSet
 		xref0 map[Token]*Scope
 		xref  map[token.Pos]Declaration
 	)
@@ -389,7 +390,7 @@ func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *Source
 			xref = map[token.Pos]Declaration{}
 		}
 	} else {
-		fset = token.NewFileSet()
+		fset = ftoken.NewFileSet()
 	}
 	var nm string
 	if f != nil {
