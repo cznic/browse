@@ -107,6 +107,20 @@ scan:
 			break scan
 		}
 	}
+
+	if sourceFile.Xref == nil {
+		xref := map[token.Pos]gc.Declaration{}
+		pkg := sourceFile.Package
+		fileScope := sourceFile.Scope
+		for tok, scope := range sourceFile.Xref0 {
+			if d := scope.Lookup(pkg, fileScope, tok); d != nil && d.Pos() != tok.Pos {
+				xref[tok.Pos] = d
+			}
+		}
+		sourceFile.Xref0 = nil
+		sourceFile.Xref = xref
+	}
+
 	f.View = tk.NewView(f.browser.desktop.Root().NewChild(wm.Rectangle{Position: area.Position}), f)
 	if bytes.HasSuffix(f.src, nl) {
 		f.src = f.src[:len(f.src)-1]
@@ -267,16 +281,24 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 			case spanComment:
 				col += f.paintSpan(col, line, f.commentStyle, span)
 			case spanIdent:
+			outer:
 				switch {
 				case hp.Y >= 0 && hp.Y == line && hp.X >= col:
 					w := f.displayWidth(col, span)
 					if hp.X < col+w {
-						if d := f.sourceFile.Xref[token.Pos(v.xref)]; d != nil {
+						switch d, ok := f.sourceFile.Xref[token.Pos(v.xref)]; {
+						//TODO case !ok:
+						//TODO 	off := f.lineOffsets[line] + int(v.column)
+						//TODO 	args := []string{"definition", fmt.Sprintf("%s:#%d", f.sourceFile.Path, off)}
+						//TODO 	t := time.Now()
+						//TODO 	out, err := exec.Command(f.browser.guru, args...).Output()
+						//TODO 	panic(fmt.Errorf("%v -> %q, %q, %v", args, out, err, time.Since(t)))
+						case d != nil:
+							_ = ok //TODO-
 							f.setTarget(d.Pos())
 							col += f.paintSpan(col, line, f.identStyle, span)
-							break
+							break outer
 						}
-
 					}
 
 					fallthrough

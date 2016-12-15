@@ -123,7 +123,7 @@ func (l *Lexer) position(off int32) token.Position { return l.file.Position(l.po
 
 // Returns the last scanned Token. 'off' must be the offset returned from last
 // call to Scan().
-func (l *Lexer) Token(off int32) Token { return newToken(l.pos(off), string(l.lit)) }
+func (l *Lexer) Token(off int32) Token { return Token{l.pos(off), string(l.lit)} }
 
 // Returns class.
 func (l *Lexer) n() byte { // n == next

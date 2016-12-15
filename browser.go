@@ -53,6 +53,7 @@ type browser struct {
 	ctx       *gc.Context
 	desktop   *wm.Desktop
 	files     int
+	guru      string
 	howerWin  *file
 	logoStyle wm.Style
 	newWinPos wm.Position
@@ -60,9 +61,10 @@ type browser struct {
 	theme     *wm.Theme
 }
 
-func newBrowser(ctx *gc.Context) *browser {
+func newBrowser(ctx *gc.Context, guru string) *browser {
 	return &browser{
 		ctx:       ctx,
+		guru:      guru,
 		newWinPos: wm.Position{X: 2, Y: 2},
 	}
 }
@@ -127,7 +129,7 @@ func (b *browser) onPaintClientArea(w *wm.Window, prev wm.OnPaintHandler, ctx wm
 	sz := w.Size()
 	w.Printf(sz.Width-logoBorder-len(logo), sz.Height-logoBorder-1, b.logoStyle, logo)
 	if debug {
-		w.Printf(sz.Width-logoBorder-len(logo), sz.Height-logoBorder, b.logoStyle, "%v %p", b.desktop.Root().Rendered(), b.howerWin)
+		w.Printf(sz.Width-logoBorder-len(logo), sz.Height-logoBorder, b.logoStyle, "%v", b.desktop.Root().Rendered())
 	}
 }
 

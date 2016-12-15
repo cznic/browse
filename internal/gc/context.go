@@ -68,8 +68,8 @@ type model struct {
 
 type tweaks struct {
 	declarationXref      bool
+	ignoreImports        bool // Test hook.
 	ignoreRedeclarations bool
-	ignoreUndefined      bool
 }
 
 // Option amends Context.
@@ -83,35 +83,18 @@ func DeclarationXref() Option {
 	}
 }
 
-// IgnoreRedeclatations disables reporting redeclaration errors.
-func IgnoreRedeclarations() Option {
-	return func(c *Context) error {
-		c.tweaks.ignoreRedeclarations = true
-		return nil
-	}
-}
-
-// IgnoreUndefined disables reporting undefined errors.
-func IgnoreUndefined() Option {
-	return func(c *Context) error {
-		c.tweaks.ignoreUndefined = true
-		return nil
-	}
-}
-
 // Context describes the context of loaded packages.
 type Context struct {
-	FileSet       *ftoken.FileSet // Contains all loaded files.
-	goarch        string
-	goos          string
-	ignoreImports bool // Test hook.
-	model         model
-	packages      map[string]*Package // Key: import path.
-	packagesMu    sync.Mutex
-	searchPaths   []string
-	tags          map[string]struct{}
-	tweaks        tweaks
-	universe      *Scope
+	FileSet     *ftoken.FileSet // Contains all loaded files.
+	goarch      string
+	goos        string
+	model       model
+	packages    map[string]*Package // Key: import path.
+	packagesMu  sync.Mutex
+	searchPaths []string
+	tags        map[string]struct{}
+	tweaks      tweaks
+	universe    *Scope
 }
 
 // NewContext returns a newly created Context. tags are the build tags
@@ -142,13 +125,19 @@ func NewContext(goos, goarch string, tags, searchPaths []string, options ...Opti
 		packages:    map[string]*Package{},
 		searchPaths: append([]string(nil), searchPaths...),
 		tags:        tm,
-		universe:    newScope(UniverseScope, nil),
 	}
 	for _, o := range options {
 		if err := o(c); err != nil {
 			return nil, err
 		}
 	}
+	pkg, err := c.Load("builtin")
+	if err != nil {
+		return nil, err
+	}
+
+	c.universe = pkg.Scope
+	c.universe.Kind = UniverseScope
 	return c, nil
 }
 
@@ -245,9 +234,21 @@ func (c *Context) dirForImportPath(importPath string) (string, error) {
 	return "", fmt.Errorf("%s", strings.Join(a, "\n"))
 }
 
+// NumPackages returns the number of loaded packages.
+//
+// The method is safe for concurrent use by multiple goroutines.
+func (c *Context) NumPackages() int {
+	c.packagesMu.Lock()
+	n := len(c.packages)
+	c.packagesMu.Unlock()
+	return n
+}
+
 // SourceFileForPath searches loaded packages for the one containing the file
-// at path.  The result is nil if the file is not considered for build by any
-// of the loaded packages.
+// at path and returns the corresponding SourceFile.  The result is nil if the
+// file is not considered for build by any of the loaded packages.
+//
+// The method is safe for concurrent use by multiple goroutines.
 func (c *Context) SourceFileForPath(path string) *SourceFile {
 	c.packagesMu.Lock()
 	defer c.packagesMu.Unlock()
@@ -347,7 +348,10 @@ func (c *Context) load(position token.Position, importPath string, syntaxError f
 	return p
 }
 
-// Load finds the package in importPath and returns the resulting Package or an error if any.
+// Load finds the package in importPath and returns the resulting Package or an
+// error if any.
+//
+// The method is safe for concurrent use by multiple goroutines.
 func (c *Context) Load(importPath string) (*Package, error) {
 	err := newErrorList(10)
 	p := c.load(token.Position{}, importPath, nil, err).waitFor()
@@ -367,12 +371,12 @@ type SourceFile struct {
 	Path          string
 	Scope         *Scope // File scope.
 	TopLevelDecls []Declaration
-	Xref          map[token.Pos]Declaration // Enabled by DeclarationXref.
+	Xref          map[token.Pos]Declaration
 	build         bool
 	f             *os.File  // Underlying src file.
 	src           mmap.MMap // Valid only during parsing and checking.
 	srcMu         sync.Mutex
-	xref          map[Token]*Scope // Token: Resolution scope.
+	Xref0         map[Token]*Scope // Token: Resolution scope. Enabled by DeclarationXref.
 }
 
 func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *SourceFile {
@@ -380,14 +384,12 @@ func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *Source
 		s     *Scope
 		fset  *ftoken.FileSet
 		xref0 map[Token]*Scope
-		xref  map[token.Pos]Declaration
 	)
 	if pkg != nil {
 		s = newScope(FileScope, pkg.Scope)
 		fset = pkg.ctx.FileSet
 		if pkg.ctx.tweaks.declarationXref {
 			xref0 = map[Token]*Scope{}
-			xref = map[token.Pos]Declaration{}
 		}
 	} else {
 		fset = ftoken.NewFileSet()
@@ -402,11 +404,10 @@ func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *Source
 		Package: pkg,
 		Path:    path,
 		Scope:   s,
-		Xref:    xref,
 		build:   true,
 		f:       f,
 		src:     src,
-		xref:    xref0,
+		Xref0:   xref0,
 	}
 }
 
@@ -416,11 +417,10 @@ func (s *SourceFile) init(pkg *Package, path string) {
 	s.TopLevelDecls = s.TopLevelDecls[:0]
 	s.Path = path
 	s.build = true
-	s.xref = nil
+	s.Xref0 = nil
 	s.Xref = nil
 	if pkg != nil && pkg.ctx.tweaks.declarationXref {
-		s.xref = map[Token]*Scope{}
-		s.Xref = map[token.Pos]Declaration{}
+		s.Xref0 = map[Token]*Scope{}
 	}
 }
 
@@ -486,7 +486,6 @@ func (p *Package) load(position token.Position, paths []string, syntaxError func
 
 	l := NewLexer(nil, nil)
 	y := newParser(nil, nil)
-	y.ignoreRedeclarations = p.ctx.tweaks.ignoreRedeclarations
 	l.errHandler = y.err
 	l.CommentHandler = y.commentHandler
 	y.syntaxError = syntaxError
@@ -517,17 +516,15 @@ func (p *Package) load(position token.Position, paths []string, syntaxError func
 		}
 	}
 	//TODO p.check()
-	for _, v := range p.SourceFiles {
-		xref := v.Xref
-		for tok, scope := range v.xref {
-			if d := scope.lookup(p, v.Scope, tok); d != nil {
-				xref[tok.Pos] = d
-			} /*TODO- else {
-				panic(fmt.Sprintf("%s: %s", v.File.Position(tok.Pos), tok.Val))
-			}*/
-		}
-		v.xref = nil
-	}
+	//TODO- for _, v := range p.SourceFiles {
+	//TODO- 	xref := v.Xref
+	//TODO- 	for tok, scope := range v.xref {
+	//TODO- 		if d := scope.lookup(p, v.Scope, tok); d != nil {
+	//TODO- 			xref[tok.Pos] = d
+	//TODO- 		}
+	//TODO- 	}
+	//TODO- 	v.xref = nil
+	//TODO- }
 }
 
 func (p *Package) waitFor() *Package {

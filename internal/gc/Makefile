@@ -37,8 +37,9 @@ edit:
 		etc.go parser.go scanner.go scanner18.go type.go
 
 editor: declarationkind_string.go
+	@echo $(shell LC_TIME=c date) | tee log
 	gofmt -l -s -w *.go
-	go test 2>&1 | tee log
+	go test 2>&1 | tee -a log
 	#go build
 
 fuzz:

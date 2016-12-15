@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//TODO declare labels
+
 package gc
 
 import (
@@ -21,17 +23,10 @@ type Node interface {
 	Pos() token.Pos
 }
 
-// Token represents the position and value of a lexeme.
+// Token represents the position and value of a token.
 type Token struct {
 	Pos token.Pos
 	Val string
-}
-
-func newToken(pos token.Pos, val string) Token {
-	return Token{
-		Pos: pos,
-		Val: val,
-	}
 }
 
 type parser struct {
@@ -45,8 +40,7 @@ type parser struct {
 
 	off int32
 
-	ignoreRedeclarations bool
-	loophack             bool
+	loophack bool
 }
 
 func newParser(src *SourceFile, l *Lexer) *parser {
@@ -55,7 +49,7 @@ func newParser(src *SourceFile, l *Lexer) *parser {
 		sourceFile: src,
 	}
 	if src != nil {
-		p.xref = src.xref
+		p.xref = src.Xref0
 	}
 	return p
 }
@@ -65,7 +59,7 @@ func (p *parser) init(src *SourceFile, l *Lexer) {
 	p.loophack = false
 	p.loophackStack = p.loophackStack[:0]
 	p.sourceFile = src
-	p.xref = src.xref
+	p.xref = src.Xref0
 }
 
 func (p *parser) err(position token.Position, msg string, args ...interface{}) {
@@ -75,6 +69,10 @@ func (p *parser) err(position token.Position, msg string, args ...interface{}) {
 func (p *parser) n() token.Token {
 more:
 	switch p.off, p.c = p.l.Scan(); p.c {
+	case token.IDENT:
+		if p.xref != nil {
+			p.xref[p.l.Token(p.off)] = p.scope
+		}
 	case token.FOR, token.IF, token.SELECT, token.SWITCH:
 		p.loophack = true
 	case token.LPAREN, token.LBRACK:
@@ -298,7 +296,7 @@ func (p *parser) importSpec() {
 			break
 		}
 
-		if !p.sourceFile.Package.ctx.ignoreImports {
+		if !p.sourceFile.Package.ctx.tweaks.ignoreImports {
 			spec := newImportSpec(decl, p.off, dot, qualifier.Val, ip)
 			spec.Package = p.sourceFile.Package.ctx.load(p.position(), ip, nil, p.sourceFile.Package.errorList).waitFor()
 			p.sourceFile.ImportSpecs = append(p.sourceFile.ImportSpecs, spec)
@@ -425,13 +423,14 @@ func (p *parser) bracedKeyValList() {
 // exprOrType:
 // 	expr
 // |	nonExprType %prec _PreferToRightParen
-func (p *parser) exprOrType() {
+func (p *parser) exprOrType() Token {
 more:
 	var fix bool
 	switch p.c {
 	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING,
 		token.NOT, token.AND, token.ADD, token.SUB, token.XOR, token.LPAREN:
-		p.expr()
+		tok, _ := p.expr()
+		return tok
 	case token.ARROW:
 		switch p.n() {
 		case token.CHAN:
@@ -472,15 +471,23 @@ more:
 	default:
 		p.syntaxError(p)
 	}
+	return Token{}
 }
 
 // exprOrTypeList:
 // 	exprOrType
 // |	exprOrTypeList ',' exprOrType
-func (p *parser) exprOrTypeList() {
-	for p.exprOrType(); p.opt(token.COMMA) && p.not2(token.RPAREN, token.ELLIPSIS); {
-		p.exprOrType()
+func (p *parser) exprOrTypeList() (r []Token) {
+	tok := p.exprOrType()
+	if tok.Pos.IsValid() {
+		r = []Token{tok}
 	}
+	for p.opt(token.COMMA) && p.not2(token.RPAREN, token.ELLIPSIS) {
+		if tok = p.exprOrType(); r != nil && tok.Pos.IsValid() {
+			r = append(r, tok)
+		}
+	}
+	return r
 }
 
 // exprOpt:
@@ -511,7 +518,7 @@ func (p *parser) exprOpt() (isExprPresent bool) {
 // |	primaryExpr '[' exprOpt ':' exprOpt ':' exprOpt ']'
 // |	primaryExpr '[' exprOpt ':' exprOpt ']'
 // |	primaryExpr '{' bracedKeyValList '}'
-func (p *parser) primaryExpr() (isLabel bool) {
+func (p *parser) primaryExpr() (rt Token, isLabelOrCompLitKey bool) {
 	var fix bool
 	var q *Scope
 	switch p.c {
@@ -524,12 +531,15 @@ func (p *parser) primaryExpr() (isLabel bool) {
 		p.n()
 		p.genericArgsOpt()
 		if p.c == token.COLON {
-			return true
+			if p.xref != nil {
+				p.xref[tok] = nil
+			}
+			return rt, true
 		}
 
+		rt = tok
 		if p.xref != nil {
-			p.xref[tok] = p.scope
-			if d := p.scope.lookup(p.sourceFile.Package, p.sourceFile.Scope, tok); d != nil && d.Kind() == ImportDeclaration {
+			if d := p.scope.Lookup(p.sourceFile.Package, p.sourceFile.Scope, tok); d != nil && d.Kind() == ImportDeclaration {
 				q = d.ImportSpec().Package.Scope
 			}
 		}
@@ -579,12 +589,14 @@ func (p *parser) primaryExpr() (isLabel bool) {
 	default:
 		p.syntaxError(p)
 	}
-	p.primaryExpr2(q)
-	return false
+	if !p.primaryExpr2(q) {
+		rt = Token{Pos: token.NoPos}
+	}
+	return rt, false
 }
 
-func (p *parser) primaryExpr2(q *Scope) {
-	for first := true; ; first = false {
+func (p *parser) primaryExpr2(q *Scope) (empty bool) {
+	for empty = true; ; q, empty = nil, false {
 		switch p.c {
 		case token.LPAREN:
 			p.n()
@@ -599,7 +611,7 @@ func (p *parser) primaryExpr2(q *Scope) {
 			switch p.n() {
 			case token.IDENT:
 				tok := p.tok()
-				if q != nil && first && p.xref != nil {
+				if p.xref != nil {
 					p.xref[tok] = q
 				}
 				p.n()
@@ -632,7 +644,7 @@ func (p *parser) primaryExpr2(q *Scope) {
 			p.bracedKeyValList()
 			p.must(token.RBRACE)
 		default:
-			return
+			return empty
 		}
 	}
 }
@@ -646,7 +658,7 @@ func (p *parser) primaryExpr2(q *Scope) {
 // |	'-' unaryExpr
 // |	'^' unaryExpr
 // |	primaryExpr
-func (p *parser) unaryExpr() (isLabel bool) {
+func (p *parser) unaryExpr() (rt Token, isLabel bool) {
 	isLabel = true
 	for {
 		switch p.c {
@@ -655,7 +667,11 @@ func (p *parser) unaryExpr() (isLabel bool) {
 			isLabel = false
 			p.n()
 		default:
-			return p.primaryExpr() && isLabel
+			rt, label := p.primaryExpr()
+			if !isLabel { // Not the primaryExpr alone case.
+				rt = Token{}
+			}
+			return rt, label && isLabel
 		}
 	}
 }
@@ -682,17 +698,19 @@ func (p *parser) unaryExpr() (isLabel bool) {
 // |	expr '^' expr
 // |	expr '|' expr
 // |	unaryExpr
-func (p *parser) expr() (isLabel bool) {
-	if isLabel = p.unaryExpr(); isLabel {
-		return true
+func (p *parser) expr() (rt Token, isLabel bool) {
+	if rt, isLabel = p.unaryExpr(); isLabel {
+		return rt, true
 	}
 
-	p.expr2()
-	return false
+	if !p.expr2() {
+		rt = Token{}
+	}
+	return rt, false
 }
 
-func (p *parser) expr2() {
-	for {
+func (p *parser) expr2() (empty bool) {
+	for empty = true; ; empty = false {
 		switch p.c {
 		case token.NEQ, token.LAND, token.AND_NOT, token.ARROW, token.SHL,
 			token.LEQ, token.EQL, token.GEQ, token.SHR, token.LOR, token.REM,
@@ -701,7 +719,7 @@ func (p *parser) expr2() {
 			p.n()
 			p.expr()
 		default:
-			return
+			return empty
 		}
 	}
 }
@@ -709,10 +727,17 @@ func (p *parser) expr2() {
 // exprList:
 // 	expr
 // |	exprList ',' expr
-func (p *parser) exprList() {
-	for p.expr(); p.opt(token.COMMA); {
-		p.expr()
+func (p *parser) exprList() (r []Token) {
+	tok, _ := p.expr()
+	if tok.Pos.IsValid() {
+		r = []Token{tok}
 	}
+	for p.opt(token.COMMA) {
+		if tok, _ = p.expr(); r != nil && tok.Pos.IsValid() {
+			r = append(r, tok)
+		}
+	}
+	return r
 }
 
 // constSpec:
@@ -768,8 +793,12 @@ func (p *parser) constSpecList() {
 func (p *parser) fieldDecl() {
 	switch p.c {
 	case token.IDENT:
+		tok := p.tok()
 		switch p.n() {
 		case token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING:
+			if p.xref != nil {
+				p.xref[tok] = nil
+			}
 			p.n()
 			return
 		case token.SEMICOLON, token.RBRACE:
@@ -778,10 +807,21 @@ func (p *parser) fieldDecl() {
 			p.n()
 			p.must(token.IDENT)
 		case token.COMMA:
+			if p.xref != nil {
+				p.xref[tok] = nil
+			}
 			p.n()
-			p.identList()
+			l := p.identList()
+			if p.xref != nil {
+				for _, v := range l {
+					p.xref[v] = nil
+				}
+			}
 			fallthrough
 		default:
+			if p.xref != nil {
+				p.xref[tok] = nil
+			}
 			p.typ()
 		}
 	case token.MUL:
@@ -820,10 +860,14 @@ func (p *parser) interfaceDecl() {
 	p.must(token.IDENT)
 	switch p.c {
 	case token.LPAREN:
+		s := newScope(BlockScope, nil)
+		p.push(s)
 		p.n()
 		p.paramTypeListCommaOptOpt()
 		p.must(token.RPAREN)
 		p.result()
+		p.pop()
+		s.Parent = nil
 	case token.PERIOD:
 		p.n()
 		p.must(token.IDENT)
@@ -929,19 +973,17 @@ func (p *parser) otherType() {
 // qualifiedIdent:
 // 	IDENT %prec _NotParen
 // |	IDENT '.' IDENT
-func (p *parser) qualifiedIdent() {
-	tok, ok := p.mustTok(token.IDENT)
-	if ok && p.xref != nil {
-		p.xref[tok] = p.scope
-	}
+func (p *parser) qualifiedIdent() (tok, tok2 Token) {
+	tok, _ = p.mustTok(token.IDENT)
 	if p.opt(token.PERIOD) {
-		tok2, ok := p.mustTok(token.IDENT)
-		if ok && p.xref != nil {
-			if d := p.scope.lookup(p.sourceFile.Package, p.sourceFile.Scope, tok); d != nil && d.Kind() == ImportDeclaration && isExported(tok2.Val) {
+		tok2, _ = p.mustTok(token.IDENT)
+		if p.xref != nil {
+			if d := p.scope.Lookup(p.sourceFile.Package, p.sourceFile.Scope, tok); d != nil && d.Kind() == ImportDeclaration && isExported(tok2.Val) {
 				p.xref[tok2] = d.ImportSpec().Package.Scope
 			}
 		}
 	}
+	return tok, tok2
 }
 
 // ptrType:
@@ -997,14 +1039,17 @@ func (p *parser) genericArgsOpt() {
 // |	otherType
 // |	ptrType
 // |	rxChanType
-func (p *parser) typ() {
+func (p *parser) typ() (tok Token) {
 	switch p.c {
 	case token.LPAREN:
 		p.n()
 		p.typ()
 		p.must(token.RPAREN)
 	case token.IDENT:
-		p.qualifiedIdent()
+		t1, t2 := p.qualifiedIdent()
+		if !t2.Pos.IsValid() {
+			tok = t1
+		}
 		p.genericArgsOpt()
 	case token.FUNC:
 		p.fnType()
@@ -1018,6 +1063,7 @@ func (p *parser) typ() {
 	default:
 		p.syntaxError(p)
 	}
+	return tok
 }
 
 //genericParamsOpt:
@@ -1150,9 +1196,10 @@ func (p *parser) commonDecl() {
 // |	IDENT typ
 // |	dddType
 // |	typ
-func (p *parser) paramType() {
+func (p *parser) paramType() (tok Token, hasNames bool) {
 	switch p.c {
 	case token.IDENT:
+		tok = p.tok()
 		switch p.n() {
 		case token.RPAREN:
 			// nop
@@ -1167,22 +1214,38 @@ func (p *parser) paramType() {
 			p.n()
 			p.typ()
 		default:
+			hasNames = true
 			p.typ()
 		}
 	case token.ELLIPSIS:
 		p.n()
 		p.typ()
 	default:
-		p.typ()
+		tok = p.typ()
 	}
+	return tok, hasNames
 }
 
 // paramTypeList:
 // 	paramType
 // |	paramTypeList ',' paramType
 func (p *parser) paramTypeList() {
-	for p.paramType(); p.opt(token.COMMA) && p.c != token.RPAREN; {
-		p.paramType()
+	var names []Token
+	tok, hasNames := p.paramType()
+	if tok.Pos.IsValid() {
+		names = []Token{tok}
+	}
+	for p.opt(token.COMMA) && p.c != token.RPAREN {
+		t, hn := p.paramType()
+		if t.Pos.IsValid() {
+			names = append(names, t)
+		}
+		hasNames = hasNames || hn
+	}
+	if hasNames {
+		for _, v := range names {
+			p.scope.declare(p, newVarDecl(v, v.Pos))
+		}
 	}
 }
 
@@ -1228,6 +1291,26 @@ func (p *parser) result() {
 	}
 }
 
+func (p *parser) shortVarDecl1(tok Token, visibility token.Pos) {
+	if !tok.Pos.IsValid() {
+		return
+	}
+
+	if _, ok := p.scope.Bindings[tok.Val]; !ok {
+		p.scope.declare(p, newVarDecl(tok, visibility))
+		if p.xref != nil {
+			p.xref[tok] = nil
+		}
+	}
+}
+
+func (p *parser) shortVarDecl(tok Token, l []Token, visibility token.Pos) {
+	p.shortVarDecl1(tok, visibility)
+	for _, v := range l {
+		p.shortVarDecl1(v, visibility)
+	}
+}
+
 // simpleStmt:
 // 	expr
 // |	expr "%=" expr
@@ -1247,12 +1330,14 @@ func (p *parser) result() {
 // |	exprList '=' exprList
 func (p *parser) simpleStmt(acceptRange bool) (isLabel, isRange bool) {
 	first := true
-	if isLabel = p.expr(); isLabel {
+	var tok Token
+	if tok, isLabel = p.expr(); isLabel {
 		return true, false
 	}
 
+	var l []Token
 more:
-	switch p.c {
+	switch pc := p.c; pc {
 	case token.REM_ASSIGN, token.AND_ASSIGN, token.AND_NOT_ASSIGN, token.MUL_ASSIGN,
 		token.ADD_ASSIGN, token.SUB_ASSIGN, token.QUO_ASSIGN, token.SHL_ASSIGN,
 		token.SHR_ASSIGN, token.XOR_ASSIGN, token.OR_ASSIGN:
@@ -1269,7 +1354,7 @@ more:
 
 		first = false
 		p.n()
-		p.exprList()
+		l = p.exprList()
 		goto more
 	case token.DEFINE, token.ASSIGN:
 		p.n()
@@ -1277,6 +1362,9 @@ more:
 			isRange = true
 		}
 		p.exprList()
+		if pc == token.DEFINE {
+			p.shortVarDecl(tok, l, p.pos())
+		}
 		return false, isRange
 	}
 	return false, false
@@ -1361,12 +1449,16 @@ func (p *parser) caseBlockList() {
 		switch p.c {
 		case token.CASE:
 			p.n()
-			p.exprOrTypeList()
-			if p.c == token.DEFINE || p.c == token.ASSIGN {
+			l := p.exprOrTypeList()
+			def := p.c == token.DEFINE
+			if def || p.c == token.ASSIGN {
 				p.n()
 				p.expr()
 			}
 			p.must(token.COLON)
+			if def {
+				p.shortVarDecl(Token{}, l, p.pos())
+			}
 		case token.DEFAULT:
 			p.n()
 			p.must(token.COLON)
@@ -1583,20 +1675,23 @@ func (p *parser) file() {
 		return
 	}
 
-	t, ok := p.mustTok(token.IDENT)
+	tok, ok := p.mustTok(token.IDENT)
 	if !ok {
 		return
 	}
 
+	if p.xref != nil {
+		p.xref[tok] = nil
+	}
 	if p.must(token.SEMICOLON) && p.sourceFile.build {
 		pkg := p.sourceFile.Package
 		switch nm := pkg.Name; {
 		case nm == "":
-			pkg.Name = t.Val
-			pkg.named = t.Pos
+			pkg.Name = tok.Val
+			pkg.named = tok.Pos
 		default:
-			if nm != t.Val {
-				//dbg("", t, pkg.Name, pkg.named)
+			if nm != tok.Val {
+				//dbg("", tok, pkg.Name, pkg.named)
 				//TODO p.todo()
 			}
 		}

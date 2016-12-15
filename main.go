@@ -61,21 +61,30 @@
 // to declarations.
 //
 // CGO identifiers (import "C") are not resolved.
+//
+// The application does not (yet) typecheck the loaded packages. For that
+// it depends on guru. To install guru
+//
+//	go get -u golang.org/x/tools/cmd/guru
 package main
 
 import (
 	"flag"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/cznic/browse/internal/gc"
 	"github.com/cznic/wm"
 )
 
-var app *wm.Application
+var (
+	app *wm.Application
+)
 
 func env(key, default_ string) string {
 	if s := os.Getenv(key); s != "" {
@@ -88,6 +97,11 @@ func env(key, default_ string) string {
 func main() {
 	log.SetFlags(log.Lshortfile)
 	flag.Parse()
+	guru, err := exec.LookPath("guru")
+	if err != nil {
+		log.Fatalf("%s\nPlease install the guru tool: go get -u golang.org/x/tools/cmd/guru", err)
+	}
+
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
@@ -133,20 +147,17 @@ outer:
 		log.Fatal(err)
 	}
 
+	t := time.Now()
 	pkg, err := ctx.Load(importPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	//TODO- var a []string
-	//TODO- for _, v := range pkg.SourceFiles {
-	//TODO- 	for k, v := range v.Xref {
-	//TODO- 		a = append(a, fmt.Sprintf("%s: %s: %s", ctx.FileSet.Position(k), ctx.FileSet.Position(v.Pos()), v.Name()))
-	//TODO- 	}
-	//TODO- }
-	//TODO- sort.Strings(a)
-	//TODO- log.Fatal(strings.Join(a, "\n"))
-	if err := newBrowser(ctx).run(pkg); err != nil {
+	if debug {
+		log.Printf("loaded+xref0: %v packages in %v", ctx.NumPackages(), time.Since(t))
+	}
+
+	if err := newBrowser(ctx, guru).run(pkg); err != nil {
 		log.Fatal(err)
 	}
 }

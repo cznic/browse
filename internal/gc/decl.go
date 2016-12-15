@@ -38,7 +38,7 @@ func (b *Bindings) declare(p *parser, d Declaration) {
 		return
 	}
 
-	if p.ignoreRedeclarations {
+	if p.sourceFile.Package.ctx.tweaks.ignoreRedeclarations {
 		return
 	}
 
@@ -127,9 +127,12 @@ func (s *Scope) declare(p *parser, d Declaration) {
 	}
 }
 
-func (s *Scope) lookup(pkg *Package, fileScope *Scope, nm Token) Declaration {
+// Lookup searches for nm in s or any of its parents. fileScope, if not nil, is
+// searched  prior to searching the universe scope when lookup does not find nm
+// in package scope and s belongs to pkg.
+func (s *Scope) Lookup(pkg *Package, fileScope *Scope, nm Token) Declaration {
 	for s0 := s; s != nil; s = s.Parent {
-		if d, ok := s.Bindings[nm.Val]; ok && (s.Kind != BlockScope || s != s0 || d.Pos() < nm.Pos) {
+		if d, ok := s.Bindings[nm.Val]; ok && (s.Kind != BlockScope || s != s0 || d.Visibility() < nm.Pos) {
 			return d
 		}
 
