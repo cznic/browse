@@ -2,18 +2,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//TODO nnn<SHIFT-G>
-
 package main
 
 import (
 	"bytes"
+	"fmt"
 	"go/token"
 	"io/ioutil"
+	"os/exec"
+	"strconv"
+	"sync"
 	"unicode/utf8"
 
+	"github.com/cznic/browse/internal/ftoken"
 	"github.com/cznic/browse/internal/gc"
-	"github.com/cznic/ftoken"
 	"github.com/cznic/mathutil"
 	"github.com/cznic/wm"
 	"github.com/cznic/wm/tk"
@@ -46,9 +48,10 @@ type file struct {
 	commentStyle wm.Style
 	howerPos     wm.Position
 	identStyle   wm.Style
-	lineNoDigits int
-	lineOffsets  []int
+	inFly        map[token.Pos]struct{} // Pending guru requests.
+	lineNoWidth  int
 	lineStyle    wm.Style
+	lines        []int
 	next         []location
 	prev         []location
 	sourceFile   *gc.SourceFile
@@ -57,6 +60,7 @@ type file struct {
 	style        wm.Style
 	target       token.Pos // "url" in bottom border.
 	targetStyle  wm.Style
+	xrefMu       sync.Mutex
 }
 
 func newFile(b *browser, area wm.Rectangle, sourceFile *gc.SourceFile) *file {
@@ -74,6 +78,7 @@ func newFile(b *browser, area wm.Rectangle, sourceFile *gc.SourceFile) *file {
 		commentStyle: wm.Style{Foreground: commentColor, Background: style.Background},
 		identStyle:   identStyle,
 		lineStyle:    wm.Style{Foreground: color, Background: style.Background},
+		inFly:        map[token.Pos]struct{}{},
 		sourceFile:   sourceFile,
 		spans:        map[int32][]span{},
 		style:        style,
@@ -109,12 +114,16 @@ scan:
 	}
 
 	if sourceFile.Xref == nil {
-		xref := map[token.Pos]gc.Declaration{}
+		xref := map[token.Pos]token.Pos{}
 		pkg := sourceFile.Package
 		fileScope := sourceFile.Scope
 		for tok, scope := range sourceFile.Xref0 {
+			if scope == nil {
+				continue
+			}
+
 			if d := scope.Lookup(pkg, fileScope, tok); d != nil && d.Pos() != tok.Pos {
-				xref[tok.Pos] = d
+				xref[tok.Pos] = d.Pos()
 			}
 		}
 		sourceFile.Xref0 = nil
@@ -130,14 +139,8 @@ scan:
 	for nlines := len(blines); nlines > 9; nlines /= 10 {
 		n++
 	}
-	f.lineNoDigits = n
-	f.lineOffsets = make([]int, len(blines)+1)
-	off := 0
-	for i, v := range blines {
-		f.lineOffsets[i] = off
-		off += len(v) + 1
-	}
-	f.lineOffsets[len(f.lineOffsets)-1] = len(f.src)
+	f.lineNoWidth = n
+	f.lines = sourceFile.File.Lines()
 	f.OnClick(f.onClick, nil)
 	f.OnClose(f.onClose, nil)
 	f.OnKey(f.onKey, nil)
@@ -244,14 +247,72 @@ func (f *file) Metrics(viewport wm.Rectangle) wm.Size {
 	w := -1
 	for i := 0; i < viewport.Height; i++ {
 		line := viewport.Y + i
-		if line < 0 || line >= len(f.lineOffsets)-1 {
+		if line < 0 || line >= len(f.lines)-1 {
 			break
 		}
 
-		dw := f.displayWidth(0, f.src[f.lineOffsets[line]:f.lineOffsets[line+1]])
-		w = mathutil.Max(w, f.lineNoDigits+dw)
+		dw := f.displayWidth(0, f.src[f.lines[line]:f.lines[line+1]])
+		w = mathutil.Max(w, f.lineNoWidth+dw)
 	}
-	return wm.Size{Width: w, Height: len(f.lineOffsets) - 1}
+	return wm.Size{Width: w, Height: len(f.lines) - 1}
+}
+
+var sep = []byte(": defined here as ")
+
+func (f *file) guru(key token.Pos, line, lineOff, lineLen int) {
+	f.xrefMu.Lock()
+	if _, ok := f.inFly[key]; ok {
+		f.xrefMu.Unlock()
+		return
+	}
+
+	f.inFly[key] = struct{}{}
+	f.xrefMu.Unlock()
+
+	var target token.Pos
+	defer func() {
+		f.xrefMu.Lock()
+		delete(f.inFly, key)
+		f.sourceFile.Xref[key] = target
+		f.xrefMu.Unlock()
+		if target.IsValid() {
+			app.PostWait(func() { f.setHowerPos(f.setHowerPos(wm.Position{-1, -1})) })
+		}
+	}()
+
+	off := f.lines[line] + lineOff
+	out, err := exec.Command(f.browser.guru, "definition", fmt.Sprintf("%s:#%d", f.sourceFile.Path, off)).Output()
+	if err != nil {
+		return
+	}
+
+	i := bytes.Index(out, sep)
+	if i < 0 {
+		return
+	}
+
+	out = out[:i]
+	i = bytes.LastIndex(out, []byte{':'})
+	tCol, err := strconv.Atoi(string(out[i+1:]))
+	if err != nil {
+		return
+	}
+
+	out = out[:i]
+	i = bytes.LastIndex(out, []byte{':'})
+	tLine, err := strconv.Atoi(string(out[i+1:]))
+	if err != nil {
+		return
+	}
+
+	sourceFile := f.browser.ctx.SourceFileForPath(string(out[:i]))
+	if sourceFile == nil {
+		return
+	}
+
+	if decl := sourceFile.File.Pos(sourceFile.File.Lines()[tLine-1] + tCol - 1); decl != key {
+		target = decl
+	}
 }
 
 func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext) {
@@ -263,12 +324,12 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 	f.setTarget(token.NoPos)
 	for i := 0; i < ctx.Height; i++ {
 		line := ctx.Y - cpY + i
-		if line < 0 || line >= len(f.lineOffsets)-1 {
+		if line < 0 || line >= len(f.lines)-1 {
 			break
 		}
 
-		f.Printf(0, line, f.lineStyle, "%*d", f.lineNoDigits, line+1)
-		src := f.src[f.lineOffsets[line]:f.lineOffsets[line+1]]
+		f.Printf(0, line, f.lineStyle, "%*d", f.lineNoWidth, line+1)
+		src := f.src[f.lines[line]:f.lines[line+1]]
 		var col, off int
 		hp := f.howerPos
 		for _, v := range f.spans[int32(line+1)] {
@@ -286,18 +347,14 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 				case hp.Y >= 0 && hp.Y == line && hp.X >= col:
 					w := f.displayWidth(col, span)
 					if hp.X < col+w {
-						switch d, ok := f.sourceFile.Xref[token.Pos(v.xref)]; {
-						//TODO case !ok:
-						//TODO 	off := f.lineOffsets[line] + int(v.column)
-						//TODO 	args := []string{"definition", fmt.Sprintf("%s:#%d", f.sourceFile.Path, off)}
-						//TODO 	t := time.Now()
-						//TODO 	out, err := exec.Command(f.browser.guru, args...).Output()
-						//TODO 	panic(fmt.Errorf("%v -> %q, %q, %v", args, out, err, time.Since(t)))
-						case d != nil:
-							_ = ok //TODO-
-							f.setTarget(d.Pos())
+						pos := token.Pos(v.xref)
+						switch target, ok := f.sourceFile.Xref[pos]; {
+						case target.IsValid():
+							f.setTarget(target)
 							col += f.paintSpan(col, line, f.identStyle, span)
 							break outer
+						case !ok:
+							go f.guru(pos, line, int(v.column), len(src))
 						}
 					}
 
@@ -315,7 +372,7 @@ func (f *file) onPaint(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext
 
 func (f *file) paintSpan(x, y int, style wm.Style, s []byte) int {
 	w, s := f.displayString(x, s)
-	f.Printf(f.lineNoDigits+1+x, y, style, "%s", s)
+	f.Printf(f.lineNoWidth+1+x, y, style, "%s", s)
 	return w
 }
 
@@ -377,9 +434,7 @@ func (f *file) displayString(col int, s []byte) (w int, b []byte) {
 	return col - w, b
 }
 
-func (f *file) enter() {
-	f.browser.howerWin = f
-}
+func (f *file) enter() { f.browser.howerWin = f }
 
 func (f *file) leave() {
 	if f == nil {
@@ -402,7 +457,7 @@ func (f *file) onMouseMove(w *wm.Window, prev wm.OnMouseHandler, button tcell.Bu
 	}
 
 	line := winPos.Y
-	col := winPos.X - f.lineNoDigits - 1
+	col := winPos.X - f.lineNoWidth - 1
 	if line < 0 || col < 0 {
 		f.setTarget(token.NoPos)
 		return true
@@ -421,10 +476,9 @@ func (f *file) setTarget(new token.Pos) {
 	f.Invalidate(f.BorderBottomArea())
 }
 
-func (f *file) setHowerPos(new wm.Position) {
-	old := f.howerPos
-	if new == old {
-		return
+func (f *file) setHowerPos(new wm.Position) (old wm.Position) {
+	if old = f.howerPos; new == old {
+		return old
 	}
 
 	o := f.Origin()
@@ -435,6 +489,7 @@ func (f *file) setHowerPos(new wm.Position) {
 	if new.Y >= 0 {
 		f.InvalidateClientArea(wm.NewRectangle(o.X, new.Y, o.X+f.ClientSize().Width-1, new.Y))
 	}
+	return old
 }
 
 func (f *file) onPaintBorderBottom(w *wm.Window, prev wm.OnPaintHandler, ctx wm.PaintContext) {

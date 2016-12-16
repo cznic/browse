@@ -53,19 +53,26 @@
 //	<End>
 //		Scroll to the last line.
 //
+// Screenshot
+//
+// An example session (colors cannot be shown here):
+//
+//	TODO
+//
 // Known issues
 //
 // Key bindings and terminal colors are hard coded.
 //
-// In terminals without mouse support there's no way to select and follow links
+// In terminals with no mouse support there's no way to select and follow links
 // to declarations.
 //
-// CGO identifiers (import "C") are not resolved.
-//
-// The application does not (yet) typecheck the loaded packages. For that
-// it depends on guru. To install guru
+// Identifiers in certain contexts cannot be resolved to their respective
+// declarations without type information available. Browse does not (yet) type
+// check the loaded packages. The (slower) fallback in such cases depends on
+// the guru tool. To install guru:
 //
 //	go get -u golang.org/x/tools/cmd/guru
+//
 package main
 
 import (

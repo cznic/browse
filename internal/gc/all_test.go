@@ -25,7 +25,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cznic/ftoken"
+	"github.com/cznic/browse/internal/ftoken"
 	"github.com/cznic/lex"
 	dfa "github.com/cznic/lexer"
 	"github.com/cznic/mathutil"

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !go1.8
-
 package gc
 
 import (
@@ -11,7 +9,7 @@ import (
 	"go/token"
 	"unicode/utf8"
 
-	"github.com/cznic/ftoken"
+	"github.com/cznic/browse/internal/ftoken"
 )
 
 // Non ASCII character classes.

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cznic/ftoken"
+	"github.com/cznic/browse/internal/ftoken"
 	"github.com/edsrzf/mmap-go"
 )
 
@@ -371,7 +371,7 @@ type SourceFile struct {
 	Path          string
 	Scope         *Scope // File scope.
 	TopLevelDecls []Declaration
-	Xref          map[token.Pos]Declaration
+	Xref          map[token.Pos]token.Pos // Identifier position: declaration position.
 	build         bool
 	f             *os.File  // Underlying src file.
 	src           mmap.MMap // Valid only during parsing and checking.
@@ -516,15 +516,6 @@ func (p *Package) load(position token.Position, paths []string, syntaxError func
 		}
 	}
 	//TODO p.check()
-	//TODO- for _, v := range p.SourceFiles {
-	//TODO- 	xref := v.Xref
-	//TODO- 	for tok, scope := range v.xref {
-	//TODO- 		if d := scope.lookup(p, v.Scope, tok); d != nil {
-	//TODO- 			xref[tok.Pos] = d
-	//TODO- 		}
-	//TODO- 	}
-	//TODO- 	v.xref = nil
-	//TODO- }
 }
 
 func (p *Package) waitFor() *Package {
