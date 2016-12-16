@@ -140,7 +140,7 @@ scan:
 		n++
 	}
 	f.lineNoWidth = n
-	f.lines = sourceFile.File.Lines()
+	f.lines = append(sourceFile.File.Lines(), len(f.src))
 	f.OnClick(f.onClick, nil)
 	f.OnClose(f.onClose, nil)
 	f.OnKey(f.onKey, nil)
