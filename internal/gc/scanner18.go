@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !go1.8
+// +build go1.8
 
 package gc
 
@@ -172,28 +172,32 @@ func (l *Lexer) octals(max int) (n int) {
 	return n
 }
 
-func (l *Lexer) decimals() {
+func (l *Lexer) decimals() (r bool) {
 	for l.c >= '0' && l.c <= '9' {
+		r = true
 		l.n()
 	}
+	return r
 }
 
-func (l *Lexer) exponent() token.Token {
+func (l *Lexer) exponent(off int32) (int32, token.Token) {
 	switch l.c {
 	case 'e', 'E':
 		switch l.n() {
 		case '+', '-':
 			l.n()
 		}
-		l.decimals()
+		if !l.decimals() {
+			l.err(l.file.Position(l.file.Pos(int(off))), "illegal floating-point exponent")
+		}
 	}
 	switch l.c {
 	case 'i':
 		l.n()
-		return token.IMAG
+		return off, token.IMAG
 	}
 
-	return token.FLOAT
+	return off, token.FLOAT
 }
 
 func (l *Lexer) hexadecimals(max int) (n int) {
@@ -514,7 +518,7 @@ skip:
 		switch l.n() {
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			l.decimals()
-			return off, l.exponent()
+			return l.exponent(off)
 		case '.':
 			switch l.n() {
 			case '.':
@@ -583,16 +587,16 @@ skip:
 		case '.':
 			l.n()
 			l.decimals()
-			return off, l.exponent()
+			return l.exponent(off)
 		case '8', '9':
 			l.decimals()
 			switch l.c {
 			case '.':
 				l.n()
 				l.decimals()
-				return off, l.exponent()
+				return l.exponent(off)
 			case 'e', 'E':
-				return off, l.exponent()
+				return l.exponent(off)
 			case 'i':
 				l.n()
 				return off, token.IMAG
@@ -600,7 +604,7 @@ skip:
 				l.err(l.position(l.off-1), "illegal octal number")
 			}
 		case 'e', 'E':
-			return off, l.exponent()
+			return l.exponent(off)
 		case 'i':
 			l.n()
 			return off, token.IMAG
@@ -622,9 +626,9 @@ skip:
 		case '.':
 			l.n()
 			l.decimals()
-			return off, l.exponent()
+			return l.exponent(off)
 		case 'e', 'E':
-			return off, l.exponent()
+			return l.exponent(off)
 		case 'i':
 			l.n()
 			return off, token.IMAG

@@ -691,7 +691,7 @@ outer:
 		l.CommentHandler = func(off int32, lit []byte) {
 			if bytes.HasPrefix(lit, lineDirective) {
 				lit = bytes.TrimSpace(lit[len(lineDirective):])
-				if i := bytes.IndexByte(lit, ':'); i > 0 && i < len(lit)-1 { //TODO last index.
+				if i := bytes.LastIndexByte(lit, ':'); i > 0 && i < len(lit)-1 {
 					fn := lit[:i]
 					ln := 0
 					for _, c := range lit[i+1:] {
