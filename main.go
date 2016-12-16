@@ -55,9 +55,7 @@
 //
 // Screenshot
 //
-// An example session (colors cannot be shown here):
-//
-//	TODO
+// See https://github.com/cznic/browse/raw/images/browse.png
 //
 // Known issues
 //
