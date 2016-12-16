@@ -8,4 +8,4 @@ Installation
 
     $ go get github.com/cznic/ftoken
 
-Documentation: [godoc.org/github.com/cznic/ftoken](http://godoc.org/github.com/cznic/ftoken)
+Documentation: [godoc.org/github.com/cznic/browse/internal/ftoken](http://godoc.org/github.com/cznic/browse/internal/ftoken)
