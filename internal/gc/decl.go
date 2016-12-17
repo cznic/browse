@@ -42,7 +42,12 @@ func (b *Bindings) declare(p *parser, d Declaration) {
 		return
 	}
 
-	p.err(p.l.file.Position(d.Pos()), "%v redeclared in this block\n\tprevious declaration at %v", d.Name(), p.l.file.Position(ex.Pos()))
+	p.err(
+		p.l.file.Position(d.Pos()),
+		"%v redeclared in this block\n\tprevious declaration at %v",
+		d.Name(),
+		p.sourceFile.Package.ctx.FileSet.File(ex.Pos()).Position(ex.Pos()),
+	)
 }
 
 // ---------------------------------------------------------------- declaration

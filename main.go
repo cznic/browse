@@ -4,14 +4,33 @@
 
 // Command browse is a source code viewer.
 //
-// Usage:
+// Usage
 //
-//	browse [import-path]
+// Invocation of the command:
 //
-// The optional argument must be a valid import path. If no argument is
-// provided browse checks if the current working directory is in a subtree
-// rooted at GOPATH/src, in which case it opens the package files in the
-// current directory.
+//	browse [flags] [import-path]
+//
+// The optional import path argument must be a valid import path. If no
+// argument is provided the command checks if the current working directory is
+// in a subtree rooted at GOPATH/src, in which case it opens the package files
+// in the current directory.
+//
+// Flags
+//
+// Options to amend things:
+//
+// 	-tags	'white space separated string'
+//
+// A list of additional build tags to consider satisfied during the build. For
+// more information about build tags, see the description of build constraints
+// in the documentation for the go/build package.
+//
+// The default tag set includes the Go version tags, like "go1.1" ... "go1.7",
+// according to the version of Go used to build the command, and tags based on
+// runtime.GOOS and runtime GOARCH. The last two tags can be overridden by
+// setting the GOOS and GOARCH environmental variables, respectively.
+//
+// The additional tags, if any, are added to the default tag set.`
 //
 // Navigation
 //
@@ -75,6 +94,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -101,6 +121,31 @@ func env(key, default_ string) string {
 
 func main() {
 	log.SetFlags(log.Lshortfile)
+	oTagsHelp := `
+	A list of additional build tags to consider satisfied 
+	during the build. For more information about build tags, see the description of
+	build constraints in the documentation for the go/build package.
+
+	The default tag set includes the Go version tags, like "go1.1" ...
+	"go1.7", according to the version of Go used to build the command, and
+	tags based on runtime.GOOS and runtime GOARCH. The last two tags can be
+	overridden by setting the GOOS and GOARCH environmental variables,
+	respectively.
+
+	The additional tags, if any, are added to the default tag set.`
+	oTags := flag.String("tags", "", oTagsHelp)
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, `%s [flags] [import-path]
+
+The optional import path argument must be a valid import path. If no argument
+is provided the command checks if the current working directory is in a subtree
+rooted at GOPATH/src, in which case it opens the package files in the current
+directory.
+
+-tags	'white space separated string'
+%s
+`, os.Args[0], oTagsHelp)
+	}
 	flag.Parse()
 	guru, err := exec.LookPath("guru")
 	if err != nil {
@@ -137,16 +182,18 @@ outer:
 		log.Fatal("expected at most one import-path argument")
 	}
 
-	defaultTags := gc.VersionTags()
+	tags := gc.VersionTags()
 	if s := env("CGO_ENABLED", "1"); s == "1" {
-		defaultTags = append(defaultTags, "cgo")
+		tags = append(tags, "cgo")
 	}
+	tags = append(tags, strings.Fields(*oTags)...)
 	ctx, err := gc.NewContext(
 		env("GOOS", runtime.GOOS),
 		env("GOARCH", runtime.GOARCH),
-		defaultTags,
+		tags,
 		searchPaths,
 		gc.DeclarationXref(),
+		gc.IgnoreRedeclarations(),
 	)
 	if err != nil {
 		log.Fatal(err)

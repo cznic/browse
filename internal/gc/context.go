@@ -75,10 +75,18 @@ type tweaks struct {
 // Option amends Context.
 type Option func(c *Context) error
 
-// DeclarationXref enables keeping a declaratio cross reference.
+// DeclarationXref enables keeping a declaration cross reference.
 func DeclarationXref() Option {
 	return func(c *Context) error {
 		c.tweaks.declarationXref = true
+		return nil
+	}
+}
+
+// IgnoreRedeclarations disables reporting redeclarations as errors.
+func IgnoreRedeclarations() Option {
+	return func(c *Context) error {
+		c.tweaks.ignoreRedeclarations = true
 		return nil
 	}
 }

@@ -1268,12 +1268,12 @@ func (p *parser) todo() {
 	p.err(p.position(), "%q=%q: TODO %v:%v", p.c, p.l.lit, fn, fl) //TODOOK
 }
 
-func newTestContext() (*Context, error) {
+func newTestContext(tags ...string) (*Context, error) {
 	a := strings.Split(os.Getenv("GOPATH"), string(os.PathListSeparator)) //TODO Handle unset $GOPATH in go1.8. (?)
 	for i, v := range a {
 		a[i] = filepath.Join(v, "src")
 	}
-	tags := VersionTags()
+	tags = append(tags, VersionTags()...)
 	if os.Getenv("CGO_ENABLED") != "0" {
 		tags = append(tags, "cgo")
 	}
@@ -1500,6 +1500,7 @@ func testParserErrchk(t *testing.T) {
 		checks.comment(l.position(off), lit)
 	}
 	fset := ftoken.NewFileSet()
+	ctx.FileSet = fset
 	for _, fn := range errchkFiles {
 		src, err := ioutil.ReadFile(fn)
 		if err != nil {
@@ -1537,4 +1538,21 @@ func TestParser(t *testing.T) {
 		t.Run("GOROOT", func(t *testing.T) { testParser(t, coverPackages) }) &&
 		t.Run("RejectFollowSet", testParserRejectFS) &&
 		t.Run("Errchk", testParserErrchk)
+}
+
+// https://github.com/cznic/browse/issues/3
+func TestIssue3(t *testing.T) {
+	ctx, err := newTestContext() //"noasm")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, _, err := ctx.filesForImportPath("github.com/gonum/matrix/mat64"); err != nil {
+		return
+	}
+
+	_, err = ctx.Load("github.com/gonum/matrix/mat64")
+	if err != nil {
+		t.Fatal(err)
+	}
 }

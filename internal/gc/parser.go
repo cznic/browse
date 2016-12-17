@@ -15,7 +15,8 @@ import (
 )
 
 var (
-	buildMark = []byte("// +build")
+	buildMark  = []byte("// +build")
+	buildMark2 = []byte("//+build")
 )
 
 // Node is implemented by all AST nodes.
@@ -175,14 +176,22 @@ func (p *parser) strLit(s string) string {
 }
 
 func (p *parser) commentHandler(_ int32, lit []byte) {
-	if p.sourceFile.build && bytes.HasPrefix(lit, buildMark) {
-		p.buildDirective(lit)
+	if p.sourceFile.build {
+		if bytes.HasPrefix(lit, buildMark) {
+			p.buildDirective(lit[len(buildMark):])
+			return
+		}
+
+		if bytes.HasPrefix(lit, buildMark2) {
+			p.buildDirective(lit[len(buildMark2):])
+			return
+		}
 	}
 }
 
 func (p *parser) buildDirective(b []byte) {
 	ctx := p.sourceFile.Package.ctx
-	s := string(b[len(buildMark):])
+	s := string(b)
 	s = strings.Replace(s, "\t", " ", -1)
 	for _, term := range strings.Split(s, " ") { // term || term
 		if term = strings.TrimSpace(term); term == "" {
@@ -306,9 +315,10 @@ func (p *parser) importSpec() {
 			default:
 				if ex, ok := spec.Package.fileScopeNames[spec.Name()]; ok {
 					_ = ex
-					panic(p.pos())
 					//TODO p.todo() // declared in pkg and file scope at the same time.
+					break
 				}
+
 				p.sourceFile.Scope.declare(p, spec)
 			}
 		}
