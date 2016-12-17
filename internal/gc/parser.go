@@ -386,7 +386,7 @@ func (p *parser) identList() (l []Token) {
 // compLitExpr:
 // 	'{' bracedKeyValList '}'
 // |	expr
-func (p *parser) compLitExpr() {
+func (p *parser) compLitExpr() /*TODO return value */ {
 	if p.opt(token.LBRACE) {
 		p.bracedKeyValList()
 		p.must(token.RBRACE)
@@ -399,7 +399,7 @@ func (p *parser) compLitExpr() {
 // keyVal:
 // 	compLitExpr
 // |	compLitExpr ':' compLitExpr
-func (p *parser) keyVal() {
+func (p *parser) keyVal() /*TODO return value */ {
 	p.compLitExpr()
 	if !p.opt(token.COLON) {
 		return
@@ -411,7 +411,7 @@ func (p *parser) keyVal() {
 // keyValList:
 // 	keyVal
 // |	keyValList ',' keyVal
-func (p *parser) keyValList() {
+func (p *parser) keyValList() /*TODO return value */ {
 	for p.keyVal(); p.opt(token.COMMA) && p.c != token.RBRACE; {
 		p.keyVal()
 	}
@@ -423,7 +423,7 @@ func (p *parser) keyValList() {
 
 // bracedKeyValList:
 // |	keyValList commaOpt
-func (p *parser) bracedKeyValList() {
+func (p *parser) bracedKeyValList() /*TODO return value */ {
 	if p.c != token.RBRACE {
 		p.keyValList()
 		p.opt(token.COMMA)
@@ -433,7 +433,7 @@ func (p *parser) bracedKeyValList() {
 // exprOrType:
 // 	expr
 // |	nonExprType %prec _PreferToRightParen
-func (p *parser) exprOrType() Token {
+func (p *parser) exprOrType() /*TODO return value */ Token {
 more:
 	var fix bool
 	switch p.c {
@@ -487,7 +487,7 @@ more:
 // exprOrTypeList:
 // 	exprOrType
 // |	exprOrTypeList ',' exprOrType
-func (p *parser) exprOrTypeList() (r []Token) {
+func (p *parser) exprOrTypeList() /*TODO return value */ (r []Token) {
 	tok := p.exprOrType()
 	if tok.Pos.IsValid() {
 		r = []Token{tok}
@@ -502,7 +502,7 @@ func (p *parser) exprOrTypeList() (r []Token) {
 
 // exprOpt:
 // |	expr
-func (p *parser) exprOpt() (isExprPresent bool) {
+func (p *parser) exprOpt() (isExprPresent bool) /*TODO return value */ {
 	if p.c == token.COLON || p.c == token.RBRACK {
 		return false
 	}
@@ -528,7 +528,7 @@ func (p *parser) exprOpt() (isExprPresent bool) {
 // |	primaryExpr '[' exprOpt ':' exprOpt ':' exprOpt ']'
 // |	primaryExpr '[' exprOpt ':' exprOpt ']'
 // |	primaryExpr '{' bracedKeyValList '}'
-func (p *parser) primaryExpr() (rt Token, isLabelOrCompLitKey bool) {
+func (p *parser) primaryExpr() /*TODO return value */ (rt Token, isLabelOrCompLitKey bool) {
 	var fix bool
 	var q *Scope
 	switch p.c {
@@ -605,7 +605,7 @@ func (p *parser) primaryExpr() (rt Token, isLabelOrCompLitKey bool) {
 	return rt, false
 }
 
-func (p *parser) primaryExpr2(q *Scope) (empty bool) {
+func (p *parser) primaryExpr2(q *Scope) /*TODO return value */ (empty bool) {
 	for empty = true; ; q, empty = nil, false {
 		switch p.c {
 		case token.LPAREN:
@@ -668,7 +668,7 @@ func (p *parser) primaryExpr2(q *Scope) (empty bool) {
 // |	'-' unaryExpr
 // |	'^' unaryExpr
 // |	primaryExpr
-func (p *parser) unaryExpr() (rt Token, isLabel bool) {
+func (p *parser) unaryExpr() /*TODO return value */ (rt Token, isLabel bool) {
 	isLabel = true
 	for {
 		switch p.c {
@@ -708,7 +708,7 @@ func (p *parser) unaryExpr() (rt Token, isLabel bool) {
 // |	expr '^' expr
 // |	expr '|' expr
 // |	unaryExpr
-func (p *parser) expr() (rt Token, isLabel bool) {
+func (p *parser) expr() /*TODO return value */ (rt Token, isLabel bool) {
 	if rt, isLabel = p.unaryExpr(); isLabel {
 		return rt, true
 	}
@@ -737,7 +737,7 @@ func (p *parser) expr2() (empty bool) {
 // exprList:
 // 	expr
 // |	exprList ',' expr
-func (p *parser) exprList() (r []Token) {
+func (p *parser) exprList() /*TODO return value */ (r []Token) {
 	tok, _ := p.expr()
 	if tok.Pos.IsValid() {
 		r = []Token{tok}
@@ -912,7 +912,7 @@ func (p *parser) interfaceDeclList() {
 // |	"struct" lbrace fieldDeclList semiOpt '}'
 // |	'[' "..." ']' typ
 // |	'[' exprOpt ']' typ
-func (p *parser) otherType() {
+func (p *parser) otherType() /*TODO return value */ {
 	var fix bool
 	switch p.c {
 	case token.CHAN:
@@ -998,7 +998,7 @@ func (p *parser) qualifiedIdent() (tok, tok2 Token) {
 
 // ptrType:
 // 	'*' typ
-func (p *parser) ptrType() {
+func (p *parser) ptrType() /*TODO return value */ {
 	for p.opt(token.MUL) {
 	}
 	p.typ()
@@ -1006,7 +1006,7 @@ func (p *parser) ptrType() {
 
 // fnType:
 // 	"func" '(' paramTypeListCommaOptOpt ')' result
-func (p *parser) fnType() {
+func (p *parser) fnType() /*TODO return value */ {
 	p.push(newScope(BlockScope, nil))
 	p.n() // "func"
 	p.must(token.LPAREN)
@@ -1017,7 +1017,7 @@ func (p *parser) fnType() {
 
 // rxChanType:
 // 	"<-" "chan" typ
-func (p *parser) rxChanType() {
+func (p *parser) rxChanType() /*TODO return value */ {
 	p.n() // "<-"
 	p.must(token.CHAN)
 	p.typ()
@@ -1026,7 +1026,7 @@ func (p *parser) rxChanType() {
 // typeList:
 // 	typ
 // |	typeList ',' typ
-func (p *parser) typeList() {
+func (p *parser) typeList() /*TODO return value */ {
 	for p.typ(); p.opt(token.COMMA) && p.c != tokenGTGT; {
 		p.typ()
 	}
@@ -1034,7 +1034,7 @@ func (p *parser) typeList() {
 
 // genericArgsOpt:
 // |	"«" typeList commaOpt "»"
-func (p *parser) genericArgsOpt() {
+func (p *parser) genericArgsOpt() /*TODO return value */ {
 	if p.opt(tokenLTLT) {
 		p.typeList()
 		p.opt(token.COMMA)
@@ -1049,7 +1049,7 @@ func (p *parser) genericArgsOpt() {
 // |	otherType
 // |	ptrType
 // |	rxChanType
-func (p *parser) typ() (tok Token) {
+func (p *parser) typ() /*TODO return value */ (tok Token) {
 	switch p.c {
 	case token.LPAREN:
 		p.n()
@@ -1078,7 +1078,7 @@ func (p *parser) typ() (tok Token) {
 
 //genericParamsOpt:
 //|	"«" identList "»"
-func (p *parser) genericParamsOpt() {
+func (p *parser) genericParamsOpt() /*TODO return value */ {
 	if p.opt(tokenLTLT) {
 		p.identList()
 		p.opt(token.COMMA)
@@ -1088,7 +1088,7 @@ func (p *parser) genericParamsOpt() {
 
 // typeSpec:
 //	IDENT genericParamsOpt typ
-func (p *parser) typeSpec() {
+func (p *parser) typeSpec() /*TODO return value */ {
 	if tok, ok := p.mustTok(token.IDENT); ok {
 		pos := token.NoPos
 		if p.scope.Kind != PackageScope {
@@ -1206,7 +1206,7 @@ func (p *parser) commonDecl() {
 // |	IDENT typ
 // |	dddType
 // |	typ
-func (p *parser) paramType() (tok Token, hasNames bool) {
+func (p *parser) paramType() /*TODO return value */ (tok Token, hasName bool) {
 	switch p.c {
 	case token.IDENT:
 		tok = p.tok()
@@ -1224,7 +1224,7 @@ func (p *parser) paramType() (tok Token, hasNames bool) {
 			p.n()
 			p.typ()
 		default:
-			hasNames = true
+			hasName = true
 			p.typ()
 		}
 	case token.ELLIPSIS:
@@ -1233,24 +1233,24 @@ func (p *parser) paramType() (tok Token, hasNames bool) {
 	default:
 		tok = p.typ()
 	}
-	return tok, hasNames
+	return tok, hasName
 }
 
 // paramTypeList:
 // 	paramType
 // |	paramTypeList ',' paramType
-func (p *parser) paramTypeList() {
+func (p *parser) paramTypeList() /*TODO return value */ {
 	var names []Token
 	tok, hasNames := p.paramType()
 	if tok.Pos.IsValid() {
 		names = []Token{tok}
 	}
 	for p.opt(token.COMMA) && p.c != token.RPAREN {
-		t, hn := p.paramType()
+		t, hasName := p.paramType()
+		hasNames = hasNames || hasName
 		if t.Pos.IsValid() {
 			names = append(names, t)
 		}
-		hasNames = hasNames || hn
 	}
 	if hasNames {
 		for _, v := range names {
@@ -1261,7 +1261,7 @@ func (p *parser) paramTypeList() {
 
 // paramTypeListCommaOptOpt:
 // |	paramTypeList commaOpt
-func (p *parser) paramTypeListCommaOptOpt() {
+func (p *parser) paramTypeListCommaOptOpt() /*TODO return value */ {
 	if p.c != token.RPAREN {
 		p.paramTypeList()
 	}
@@ -1275,7 +1275,7 @@ func (p *parser) paramTypeListCommaOptOpt() {
 // |	otherType
 // |	ptrType
 // |	rxChanType
-func (p *parser) result() {
+func (p *parser) result() /*TODO return value */ {
 	switch p.c {
 	case token.LBRACE, token.RPAREN, token.SEMICOLON, token.COMMA, tokenBODY,
 		token.RBRACE, token.COLON, token.STRING, token.ASSIGN:
@@ -1338,7 +1338,7 @@ func (p *parser) shortVarDecl(tok Token, l []Token, visibility token.Pos) {
 // |	expr "|=" expr
 // |	exprList ":=" exprList
 // |	exprList '=' exprList
-func (p *parser) simpleStmt(acceptRange bool) (isLabel, isRange bool) {
+func (p *parser) simpleStmt(acceptRange bool) /*TODO return value */ (isLabel, isRange bool) {
 	first := true
 	var tok Token
 	if tok, isLabel = p.expr(); isLabel {
@@ -1382,7 +1382,7 @@ more:
 
 // simpleStmtOpt:
 // |	simpleStmt
-func (p *parser) simpleStmtOpt(acceptRange bool) (isRange bool) {
+func (p *parser) simpleStmtOpt(acceptRange bool) /*TODO return value */ (isRange bool) {
 	if p.c == token.SEMICOLON || p.c == tokenBODY {
 		return false
 	}
@@ -1394,7 +1394,7 @@ func (p *parser) simpleStmtOpt(acceptRange bool) (isRange bool) {
 // ifHeader:
 // 	simpleStmtOpt
 // |	simpleStmtOpt ';' simpleStmtOpt
-func (p *parser) ifHeader() {
+func (p *parser) ifHeader() /*TODO return value */ {
 	p.simpleStmtOpt(false)
 	if p.opt(token.SEMICOLON) {
 		p.simpleStmtOpt(false)
@@ -1407,7 +1407,7 @@ func (p *parser) ifHeader() {
 
 // loopBody:
 // 	BODY stmtList '}'
-func (p *parser) loopBody() {
+func (p *parser) loopBody() /*TODO return value */ {
 	p.must(tokenBODY)
 	p.push(newScope(BlockScope, nil))
 	p.stmtList()
@@ -1417,7 +1417,7 @@ func (p *parser) loopBody() {
 
 // elseIfList:
 // |	elseIfList "else" "if" ifHeader loopBody
-func (p *parser) elseIfList() (isElse bool) {
+func (p *parser) elseIfList() /*TODO return value */ (isElse bool) {
 	for p.opt(token.ELSE) {
 		if p.opt(token.IF) {
 			p.ifHeader()
@@ -1432,7 +1432,7 @@ func (p *parser) elseIfList() (isElse bool) {
 
 // compoundStmt:
 // 	'{' stmtList '}'
-func (p *parser) compoundStmt() {
+func (p *parser) compoundStmt() /*TODO return value */ {
 	switch p.c {
 	case token.LBRACE:
 		p.n()
@@ -1453,7 +1453,7 @@ func (p *parser) compoundStmt() {
 // |	caseBlockList "case" exprOrTypeList ':' stmtList
 // |	caseBlockList "case" exprOrTypeList '=' expr ':' stmtList
 // |	caseBlockList "default" ':' stmtList
-func (p *parser) caseBlockList() {
+func (p *parser) caseBlockList() /*TODO return value */ {
 	for {
 		p.push(newScope(BlockScope, nil))
 		switch p.c {
@@ -1512,7 +1512,7 @@ func (p *parser) caseBlockList() {
 // |	commonDecl
 // |	compoundStmt
 // |	simpleStmt
-func (p *parser) stmt() {
+func (p *parser) stmt() /*TODO return value */ {
 more:
 	switch p.c {
 	case token.SEMICOLON, token.RBRACE, token.CASE, token.DEFAULT:
@@ -1604,7 +1604,7 @@ more:
 // stmtList:
 // 	stmt
 // |	stmtList ';' stmt
-func (p *parser) stmtList() {
+func (p *parser) stmtList() /*TODO return value */ {
 	for p.stmt(); p.opt(token.SEMICOLON) && p.not2(token.RBRACE, token.CASE, token.DEFAULT); {
 		p.stmt()
 	}
@@ -1612,7 +1612,7 @@ func (p *parser) stmtList() {
 
 // fnBody:
 // |	'{' stmtList '}'
-func (p *parser) fnBody() {
+func (p *parser) fnBody() /*TODO return value */ {
 	if p.opt(token.LBRACE) {
 		p.stmtList()
 		p.must(token.RBRACE)

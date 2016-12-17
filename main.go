@@ -19,7 +19,7 @@
 //
 // Options to amend things:
 //
-// 	-tags	'white space separated string'
+// 	-tags 'white space separated string'
 //
 // A list of additional build tags to consider satisfied during the build. For
 // more information about build tags, see the description of build constraints
@@ -30,7 +30,7 @@
 // runtime.GOOS and runtime GOARCH. The last two tags can be overridden by
 // setting the GOOS and GOARCH environmental variables, respectively.
 //
-// The additional tags, if any, are added to the default tag set.`
+// The additional tags, if any, are added to the default tag set.
 //
 // Navigation
 //
