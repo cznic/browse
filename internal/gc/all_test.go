@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cznic/browse/internal/ftoken"
@@ -78,7 +79,7 @@ func init() {
 	use(caller, dbg, TODO, (*parser).todo, stack) //TODOOK
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		panic("internal error")
+		panic("internal error: cannot determine self import path")
 	}
 
 	gopaths := filepath.SplitList(os.Getenv("GOPATH"))
@@ -93,7 +94,7 @@ func init() {
 		return
 	}
 
-	panic("internal error")
+	panic("internal error: cannot determine self import path")
 }
 
 func pretty(v interface{}) string { return strutil.PrettyString(v, "", "", nil) }
@@ -563,6 +564,7 @@ func testScannerBugs(t *testing.T) {
 		{"'\\u0000'", toks{{0, "1:1", token.CHAR, "'\\u0000'"}, {8, "1:9", token.SEMICOLON, "\n"}}},
 		{"'\\x00'!", toks{{0, "1:1", token.CHAR, "'\\x00'"}, {6, "1:7", token.NOT, "!"}}},
 		{"'\\x00'", toks{{0, "1:1", token.CHAR, "'\\x00'"}, {6, "1:7", token.SEMICOLON, "\n"}}},
+		{"'foo';", toks{{0, "1:1", token.CHAR, "'foo'"}, {5, "1:6", token.SEMICOLON, ";"}}},
 		{"( ", toks{{0, "1:1", token.LPAREN, "("}}},
 		{"(", toks{{0, "1:1", token.LPAREN, "("}}},
 		{"/***/func", toks{{5, "1:6", token.FUNC, "func"}}},
@@ -690,6 +692,10 @@ outer:
 		l.fname = &path
 		l.CommentHandler = func(off int32, lit []byte) {
 			if bytes.HasPrefix(lit, lineDirective) {
+				if l.position(off).Column != 1 {
+					return
+				}
+
 				lit = bytes.TrimSpace(lit[len(lineDirective):])
 				if i := bytes.LastIndexByte(lit, ':'); i > 0 && i < len(lit)-1 {
 					fn := lit[:i]
@@ -799,7 +805,7 @@ func BenchmarkScanner(b *testing.B) {
 		c := make(chan error, len(stdLibFiles))
 		fset := token.NewFileSet()
 		b.ResetTimer()
-		var sum int
+		var sum int32
 		for i := 0; i < b.N; i++ {
 			sum = 0
 			for _, v := range stdLibFiles {
@@ -810,7 +816,7 @@ func BenchmarkScanner(b *testing.B) {
 						return
 					}
 
-					sum += len(src)
+					atomic.AddInt32(&sum, int32(len(src)))
 					var s scanner.Scanner
 					s.Init(fset.AddFile(v, -1, len(src)), src, nil, 0)
 					for {
@@ -834,7 +840,7 @@ func BenchmarkScanner(b *testing.B) {
 		c := make(chan error, len(stdLibFiles))
 		fset := ftoken.NewFileSet()
 		b.ResetTimer()
-		var sum int
+		var sum int32
 		for i := 0; i < b.N; i++ {
 			sum = 0
 			for _, v := range stdLibFiles {
@@ -855,7 +861,7 @@ func BenchmarkScanner(b *testing.B) {
 
 					defer src.Unmap()
 
-					sum += len(src)
+					atomic.AddInt32(&sum, int32(len(src)))
 					l := NewLexer(fset.AddFile(v, -1, len(src)), src)
 					for {
 						if _, tok := l.Scan(); tok == token.EOF {
@@ -876,7 +882,7 @@ func BenchmarkScanner(b *testing.B) {
 }
 
 func BenchmarkParser(b *testing.B) {
-	var sum int
+	var sum int32
 	b.Run("StdGo", func(b *testing.B) {
 		c := make(chan error, len(stdLibFiles))
 		fset := token.NewFileSet()
@@ -891,7 +897,7 @@ func BenchmarkParser(b *testing.B) {
 						return
 					}
 
-					sum += len(src)
+					atomic.AddInt32(&sum, int32(len(src)))
 					_, err = goparser.ParseFile(fset, v, src, 0)
 					c <- err
 				}(v)
@@ -1269,7 +1275,7 @@ func (p *parser) todo() {
 }
 
 func newTestContext(tags ...string) (*Context, error) {
-	a := strings.Split(os.Getenv("GOPATH"), string(os.PathListSeparator)) //TODO Handle unset $GOPATH in go1.8. (?)
+	a := strings.Split(strutil.Gopath(), string(os.PathListSeparator))
 	for i, v := range a {
 		a[i] = filepath.Join(v, "src")
 	}
@@ -1372,12 +1378,8 @@ type errchk struct {
 type errchks []errchk
 
 func (e *errchks) comment(position token.Position, s []byte) {
-	if bytes.HasPrefix(s, generalCommentStart) {
-		s = s[len(generalCommentStart):]
-	}
-	if bytes.HasSuffix(s, generalCommentEnd) {
-		s = s[:len(s)-len(generalCommentEnd)]
-	}
+	s = bytes.TrimPrefix(s, generalCommentStart)
+	s = bytes.TrimSuffix(s, generalCommentEnd)
 	s = bytes.TrimSpace(s)
 	n := len(errCheckMark1)
 	i := bytes.LastIndex(s, errCheckMark1)
@@ -1482,7 +1484,8 @@ outer:
 	}
 }
 
-// Verify no syntax error are reported for lines w/o the magic [GC_]ERROR comments.
+// Verify no syntax errors are reported for lines w/o the magic [GC_]ERROR
+// comments.
 func testParserErrchk(t *testing.T) {
 	ctx, err := newTestContext()
 	if err != nil {

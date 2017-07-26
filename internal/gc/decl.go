@@ -5,6 +5,7 @@
 package gc
 
 import (
+	"fmt"
 	"go/token"
 )
 
@@ -29,7 +30,7 @@ func (b *Bindings) declare(p *parser, d Declaration) {
 	m := *b
 	nm := d.Name()
 	if nm == "" { //TODO-
-		panic("internal error")
+		panic(fmt.Errorf("%s: internal error: Bindings.declare - empty declaration name", p.l.file.Position(d.Pos())))
 	}
 
 	ex := m[nm]
@@ -105,11 +106,15 @@ func newScope(kind ScopeKind, parent *Scope) *Scope {
 
 func (s *Scope) declare(p *parser, d Declaration) {
 	nm := d.Name()
+	if s.Kind == FileScope {
+		p.sourceFile.TopLevelDecls = append(p.sourceFile.TopLevelDecls, d)
+	}
 	if nm == "_" {
-		s.Unbound = append(s.Unbound, d)
+		if s.Kind != FileScope {
+			s.Unbound = append(s.Unbound, d)
+		}
 		return
 	}
-
 	switch d.(type) {
 	case *ConstDecl, *VarDecl, *TypeDecl, *FuncDecl:
 		s.Bindings.declare(p, d)

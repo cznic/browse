@@ -319,7 +319,9 @@ func (p *parser) importSpec() {
 					break
 				}
 
-				p.sourceFile.Scope.declare(p, spec)
+				if spec.Name() != "" {
+					p.sourceFile.Scope.declare(p, spec)
+				}
 			}
 		}
 		p.n()
@@ -1088,6 +1090,7 @@ func (p *parser) genericParamsOpt() /*TODO return value */ {
 
 // typeSpec:
 //	IDENT genericParamsOpt typ
+// |	IDENT '=' typ
 func (p *parser) typeSpec() /*TODO return value */ {
 	if tok, ok := p.mustTok(token.IDENT); ok {
 		pos := token.NoPos
@@ -1096,7 +1099,17 @@ func (p *parser) typeSpec() /*TODO return value */ {
 		}
 		p.scope.declare(p, newTypeDecl(tok, pos))
 	}
-	p.genericParamsOpt()
+	switch p.c {
+	case token.ASSIGN:
+		if goVersion >= "1.9" {
+			p.n()
+			break
+		}
+
+		fallthrough
+	default:
+		p.genericParamsOpt()
+	}
 	p.typ()
 }
 

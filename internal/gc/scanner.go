@@ -119,8 +119,8 @@ func (l *Lexer) pos(off int32) token.Pos { return l.file.Pos(int(off)) }
 
 func (l *Lexer) position(off int32) token.Position { return l.file.Position(l.pos(off)) }
 
-// Returns the last scanned Token. 'off' must be the offset returned from last
-// call to Scan().
+// Token returns the last scanned Token. 'off' must be the offset returned from
+// last call to Scan().
 func (l *Lexer) Token(off int32) Token { return Token{l.pos(off), string(l.lit)} }
 
 // Returns class.
@@ -185,7 +185,7 @@ func (l *Lexer) exponent(off int32) (int32, token.Token) {
 		case '+', '-':
 			l.n()
 		}
-		if !l.decimals() && goVersion > 17 {
+		if !l.decimals() && goVersion > "1.7" {
 			l.err(l.file.Position(l.file.Pos(int(off))), "illegal floating-point exponent")
 		}
 	}
@@ -470,7 +470,17 @@ skip:
 			l.n()
 		default:
 			l.err(l.position(l.off-1), "rune literal not terminated")
-			for l.n() != '\'' && l.c != classEOF && l.c != '\n' {
+		search:
+			for {
+				switch l.c {
+				case '\n', classEOF:
+					break search
+				case '\'':
+					l.n()
+					break search
+				default:
+					l.n()
+				}
 			}
 		}
 		return off, token.CHAR

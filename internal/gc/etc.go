@@ -6,6 +6,7 @@ package gc
 
 import (
 	"bytes"
+	"fmt"
 	"go/scanner"
 	"go/token"
 	"os"
@@ -32,7 +33,7 @@ func (l *errorList) Add(position token.Position, msg string) {
 	l.mu.Lock()
 	if l.limit == 0 {
 		l.mu.Unlock()
-		panic(nil)
+		panic(fmt.Errorf("%s: %v", position, msg))
 	}
 
 	l.limit--

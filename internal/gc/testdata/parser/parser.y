@@ -144,6 +144,7 @@ genericParamsOpt:
 
 typeSpec:
 	IDENT genericParamsOpt typ
+|	IDENT '=' typ
 
 simpleStmt:
 	expr

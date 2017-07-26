@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	validOS = map[string]bool{ // Go 1.7
+	validOS = map[string]bool{ // Go 1.9
 		"android":   true,
 		"darwin":    true,
 		"dragonfly": true,
@@ -30,29 +30,30 @@ var (
 		"plan9":     true,
 		"solaris":   true,
 		"windows":   true,
+		"zos":       true,
 	}
 
-	archModels = map[string]model{ // Go 1.7
+	archModels = map[string]model{ // Go 1.9
 		"386":         {4, 4},
 		"amd64":       {8, 8},
 		"amd64p32":    {8, 4},
+		"arm":         {4, 4},
 		"arm64":       {8, 8},
 		"arm64be":     {8, 8},
-		"arm":         {4, 4},
 		"armbe":       {4, 4},
+		"mips":        {8, 8}, //TODO ?
 		"mips64":      {8, 8},
 		"mips64le":    {8, 8},
 		"mips64p32":   {8, 4},
 		"mips64p32le": {8, 4},
-		"mips":        {8, 8}, //TODO ?
 		"mipsle":      {8, 8}, //TODO ?
+		"ppc":         {4, 4},
 		"ppc64":       {8, 8},
 		"ppc64le":     {8, 8},
-		"ppc":         {4, 4},
 		"s390":        {4, 4},
 		"s390x":       {8, 8},
-		"sparc64":     {8, 8},
 		"sparc":       {4, 4},
+		"sparc64":     {8, 8},
 	}
 )
 
@@ -380,11 +381,12 @@ type SourceFile struct {
 	Scope         *Scope // File scope.
 	TopLevelDecls []Declaration
 	Xref          map[token.Pos]token.Pos // Identifier position: declaration position.
-	build         bool
-	f             *os.File  // Underlying src file.
-	src           mmap.MMap // Valid only during parsing and checking.
-	srcMu         sync.Mutex
-	Xref0         map[Token]*Scope // Token: Resolution scope. Enabled by DeclarationXref.
+	Xref0         map[Token]*Scope        // Token: Resolution scope. Enabled by DeclarationXref.
+
+	build bool
+	f     *os.File  // Underlying src file.
+	src   mmap.MMap // Valid only during parsing and checking.
+	srcMu sync.Mutex
 }
 
 func newSourceFile(pkg *Package, path string, f *os.File, src mmap.MMap) *SourceFile {
