@@ -5,12 +5,14 @@
 package main
 
 import (
-	"github.com/cznic/browse/internal/gc"
-	"github.com/cznic/wm"
-	"github.com/gdamore/tcell"
 	"os"
 	"runtime"
 	"time"
+
+	"github.com/cznic/browse/internal/gc"
+	"github.com/cznic/wm"
+	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/terminfo"
 )
 
 const (
@@ -75,7 +77,7 @@ func (b *browser) run(pkg *gc.Package) (err error) {
 	case runtime.GOOS == "windows":
 		colors = 16
 	default:
-		info, err := tcell.LookupTerminfo(os.Getenv("TERM"))
+		info, err := terminfo.LookupTerminfo(os.Getenv("TERM"))
 		if err != nil {
 			return err
 		}
