@@ -1,15 +1,5 @@
-# browse
+`github.com/cznic/browse` has moved to [`modernc.org/browse`](https://godoc.org/modernc.org/browse) ([vcs](https://gitlab.com/cznic/browse)).
 
-Terminal Go Source Code Browser
+Please update your import paths to `modernc.org/browse`.
 
-Installation
-
-    $ go get [-u] github.com/cznic/browse
-
-Documentation: [godoc.org/github.com/cznic/browse](http://godoc.org/github.com/cznic/browse)
-
-----
-
-Screenshot
-
-![](https://github.com/cznic/browse/blob/images/browse.png)
+This repo is now archived.
